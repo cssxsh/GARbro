@@ -134,7 +134,7 @@ namespace GameRes.Formats.Ikura
             Func<byte[], int, object> label = (bytes, pos) => bytes.ToIsfLabel(pos);
             Func<byte[], int, object> value = (bytes, pos) => bytes.ToIsfValue(pos);
             Func<byte[], int, object> table = (bytes, pos) => bytes.ToIsfTable(pos);
-            Func<byte[], int, object> block = (bytes, pos) => bytes.ToIsfBlock(pos);
+            Func<byte[], int, object> condition = (bytes, pos) => bytes.ToIsfCondition(pos);
             Func<byte[], int, object> assignment = (bytes, pos) => bytes.ToIsfAssignment(pos);
 
             // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
@@ -225,7 +225,7 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.CALC:
                     return data.ToArgs(assignment);
                 case IsfInstruction.IF:
-                    return data.ToArgs(value, uint8, value, block);
+                    return data.ToArgs(condition);
                 case IsfInstruction.VSET:
                     return data.ToArgs(value, value, value);
                 case IsfInstruction.GL:
@@ -649,14 +649,13 @@ namespace GameRes.Formats.Ikura
                     builder.Append($"AND {Terms[i]} ");
                 }
 
-                builder.Append("THEN ");
                 switch (Action.Key)
                 {
                     case 0:
-                        builder.Append($"JP {string.Join(", ", Action.Value)}");
+                        builder.Append($"JP {string.Join(", ", Action.Value)} ");
                         break;
                     case 1:
-                        builder.Append($"HS {string.Join(", ", Action.Value)}");
+                        builder.Append($"HS {string.Join(", ", Action.Value)} ");
                         break;
                 }
 

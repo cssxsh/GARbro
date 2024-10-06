@@ -401,35 +401,51 @@ namespace GameRes.Formats.Ikura
             return new IsfTable { Value = id, Labels = arr };
         }
 
-        private static IsfBlock ToIsfBlock<Bs>(this Bs bytes, int index) where Bs : IList<byte>
+        private static IsfCondition ToIsfCondition<Bs>(this Bs bytes, int index) where Bs : IList<byte>
         {
             var pos = index;
-            var lines = new List<KeyValuePair<byte, object[]>>();
+            var terms = new List<IsfCondition.Term>();
+            var action = new KeyValuePair<byte, object[]>(0xFF, null);
             while (pos < bytes.Count)
             {
-                var type = bytes.ToUInt8(pos);
+                var l = bytes.ToUInt32(pos);
+                pos += 4;
+                var c = bytes.ToUInt8(pos);
                 pos += 1;
-                if (type == 0xFF) break;
-                var args = bytes.Skip(pos).Cast<object>().ToArray();
-                switch (type)
+                var r = bytes.ToUInt32(pos);
+                pos += 4;
+                terms.Add(new IsfCondition.Term { L = l, C = c, R = r });
+
+                var op = bytes.ToUInt8(pos);
+                pos += 1;
+                switch (op)
                 {
                     case 0x00:
-                        args = IsfInstruction.JP.Parse(bytes.Skip(pos).Take(2).ToArray()).ToArray();
+                        // JP
+                        var jp = IsfInstruction.JP.Parse(bytes.Skip(pos).Take(2).ToArray()).ToArray();
+                        action = new KeyValuePair<byte, object[]>(op, jp);
                         pos += 2;
                         break;
                     case 0x01:
-                        args = IsfInstruction.HS.Parse(bytes.Skip(pos).Take(6).ToArray()).ToArray();
+                        // HS
+                        var hs = IsfInstruction.HS.Parse(bytes.Skip(pos).Take(6).ToArray()).ToArray();
+                        action = new KeyValuePair<byte, object[]>(op, hs);
                         pos += 6;
                         break;
-                    default:
-                        pos = bytes.Count;
+                    case 0xFF:
+                        // END
+                        pos -= 1;
                         break;
+                    default:
+                        // AND
+                        continue;
                 }
-
-                lines.Add(new KeyValuePair<byte, object[]>(type, args));
+                
+                var end = bytes.ToUInt8(pos);
+                if (end == 0xFF) break;
             }
 
-            return new IsfBlock { Actions = lines.ToArray() };
+            return new IsfCondition { Terms = terms.ToArray(), Action = action };
         }
 
         private static IsfAssignment ToIsfAssignment<Bs>(this Bs bytes, int index) where Bs : IList<byte>
@@ -574,31 +590,77 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfBlock : IIsfData
+        private struct IsfCondition : IIsfData
         {
-            public KeyValuePair<byte, object[]>[] Actions;
-
-            public int Size => Actions.Sum(action =>
+            public struct Term
             {
-                switch (action.Key)
+                public uint L;
+                public byte C;
+                public uint R;
+
+                public override string ToString()
                 {
-                    case 0x00:
-                        return 1 + 2;
-                    case 0x01:
-                        return 1 + 6;
-                    default:
-                        return 1 + 0;
+                    var a = new IsfValue { Id = L };
+                    var b = new IsfValue { Id = R };
+                    switch (C)
+                    {
+                        case 0:
+                            return $"{a} == {b}";
+                        case 1:
+                            return $"{a} < {b}";
+                        case 2:
+                            return $"{a} <= {b}";
+                        case 3:
+                            return $"{a} > {b}";
+                        case 4:
+                            return $"{a} >= {b}";
+                        case 5:
+                            return $"{a} != {b}";
+                        default:
+                            return "FALSE";
+                    }
                 }
-            });
+            }
+
+            public Term[] Terms;
+            public KeyValuePair<byte, object[]> Action;
+
+            private int ActionSize()
+            {
+                switch (Action.Key)
+                {
+                    case 0:
+                        return 1 + 6;
+                    case 1:
+                        return 1 + 2;
+                    default:
+                        return 1;
+                }
+            }
+
+            public int Size => Terms.Length * 9 + ActionSize() + 1;
 
             public override string ToString()
             {
-                // TODO
                 var builder = new StringBuilder();
-                // builder.Append(value);
-                // builder.Append(", [");
-                // builder.Append(string.Join(", ", Labels.Select(i => new IsfLabel { Index = i })));
-                // builder.Append("]");
+                builder.Append($"IF {Terms[0]} ");
+                for (var i = 1; i < Terms.Length; i++)
+                {
+                    builder.Append($"AND {Terms[i]} ");
+                }
+
+                builder.Append("THEN ");
+                switch (Action.Key)
+                {
+                    case 0:
+                        builder.Append($"JP {string.Join(", ", Action.Value)}");
+                        break;
+                    case 1:
+                        builder.Append($"HS {string.Join(", ", Action.Value)}");
+                        break;
+                }
+
+                builder.Append("END IF");
                 return builder.ToString();
             }
         }
@@ -987,55 +1049,7 @@ namespace GameRes.Formats.Ikura
                     switch (Actions[i].Instruction)
                     {
                         case IsfInstruction.IF:
-                            builder.Append("    IF ");
-                            builder.Append(Actions[i].Args[0].ToText(Encoding));
-                            builder.Append(" ");
-                            
-                            switch (Actions[i].Args[1] as byte?)
-                            {
-                                case 0:
-                                    builder.Append("==");
-                                    break;
-                                case 1:
-                                    builder.Append("<");
-                                    break;
-                                case 2:
-                                    builder.Append("<=");
-                                    break;
-                                case 3:
-                                    builder.Append(">");
-                                    break;
-                                case 4:
-                                    builder.Append(">=");
-                                    break;
-                                case 5:
-                                    builder.Append("!=");
-                                    break;
-                                default:
-                                    builder.Append($"?{Actions[i].Args[1]}?");
-                                    break;
-                            }
-
-                            builder.Append(" ");
-                            builder.Append(Actions[i].Args[2].ToText(Encoding));
-                            builder.AppendLine();
-
-                            var block = Actions[i].Args[3] as IsfBlock? ?? new IsfBlock();
-                            foreach (var action in block.Actions)
-                            {
-                                var args = string.Join(", ", action.Value.Select(arg => arg.ToText(Encoding)));
-                                switch (action.Key)
-                                {
-                                    case 0:
-                                        builder.AppendLine($"        JP {args}");
-                                        break;
-                                    case 1:
-                                        builder.AppendLine($"        HS {args}");
-                                        break;
-                                }
-                            }
-
-                            builder.AppendLine("    END IF");
+                            builder.AppendLine($"    {Actions[i].Args[0]}");
                             break;
                         case IsfInstruction.CALC:
                         default:

@@ -162,34 +162,49 @@ namespace GameRes.Formats.Ikura
                     return data.ToArgs(uint8);
                 case IsfInstruction.PM:
                     var readers = new List<Func<byte[], int, object>>();
-                    var pos = 1;
+                    var pos = 0;
                     readers.Add(uint8);
+                    pos += 1;
                     while (pos < data.Length)
                     {
                         var type = data.ToUInt8(pos);
-                        pos += 1;
                         readers.Add(uint8);
+                        pos += 1;
                         switch (type)
                         {
+                            case 0x00:
+                                break;
                             case 0x01:
+                                readers.Add(uint8);
+                                readers.Add(uint8);
+                                readers.Add(uint8);
+                                readers.Add(uint8);
                                 pos += 4;
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                readers.Add(uint8);
+                                break;
+                            case 0x02:
+                                break;
+                            case 0x03:
                                 break;
                             case 0x04:
-                            case 0x07:
-                                pos += 1;
                                 readers.Add(uint8);
+                                pos += 1;
+                                break;
+                            case 0x05:
+                                // StopAction
+                                break;
+                            case 0x06:
+                                break;
+                            case 0x07:
+                                readers.Add(uint8);
+                                pos += 1;
                                 break;
                             case 0x08:
-                                pos += 4;
                                 readers.Add(value);
+                                pos += 4;
                                 break;
                             case 0x09:
-                                pos += 1;
                                 readers.Add(uint8);
+                                pos += 1;
                                 break;
                             case 0x0A:
                                 pos += 4;
@@ -368,7 +383,15 @@ namespace GameRes.Formats.Ikura
                     break;
                 }
 
-                offset += bytes[offset] >= 127 ? 2 : 1;
+                if (bytes[offset] == 0x5C)
+                {
+                    offset++;
+                    if (bytes[offset] != 0) offset++;
+                    offset++;
+                    continue;
+                }
+
+                offset += bytes[offset] >= 0x7F ? 2 : 1;
             }
 
             return new IsfString { Bytes = bytes.Take(offset).Skip(index).ToArray() };
@@ -502,29 +525,43 @@ namespace GameRes.Formats.Ikura
                 var offset = 0;
                 while (offset < Bytes.Length)
                 {
-                    if (Bytes[offset] == 0)
+                    switch (Bytes[offset])
                     {
-                        buffer.Add(0);
-                        break;
+                        case 0x00:
+                            buffer.Add(0);
+                            offset += 1;
+                            continue;
+                        case 0x5C:
+                            buffer.Add(IsfKana[0xB8]);
+                            offset += 1;
+                            if (Bytes[offset] != 0x00) offset += 1;
+                            buffer.Add(IsfKana[Bytes[offset - 1] * 2 + 1]);
+                            offset += 1;
+                            continue;
+                        case 0x7F:
+                            buffer.Add(Bytes[offset + 1]);
+                            offset += 2;
+                            continue;
+                        default:
+                            if ((Bytes[offset] & 0x80) == 0)
+                            {
+                                buffer.Add(IsfKana[Bytes[offset] * 2]);
+                                buffer.Add(IsfKana[Bytes[offset] * 2 + 1]);
+                                offset += 1;
+                            }
+                            else
+                            {
+                                buffer.Add(Bytes[offset]);
+                                buffer.Add(Bytes[offset + 1]);
+                                offset += 2;
+                            }
+                            continue;
                     }
-
-                    if (Bytes[offset] < 127)
-                    {
-                        buffer.Add(IsfKana[Bytes[offset] * 2]);
-                        buffer.Add(IsfKana[Bytes[offset] * 2 + 1]);
-                        offset += 1;
-                    }
-                    else if (Bytes[offset] == 127)
-                    {
-                        buffer.Add(Bytes[offset + 1]);
-                        offset += 2;
-                    }
-                    else
-                    {
-                        buffer.Add(Bytes[offset]);
-                        buffer.Add(Bytes[offset + 1]);
-                        offset += 2;
-                    }
+                }
+                
+                if (offset != Bytes.Length)
+                {
+                    // TODO: throw ...
                 }
 
                 return new CString { Bytes = buffer.ToArray() };

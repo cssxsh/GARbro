@@ -495,7 +495,20 @@ namespace GameRes.Formats.Ikura
             int Size { get; }
         }
 
-        private struct CString : IIsfData
+        internal struct UInt24 : IIsfData
+        {
+            public byte[] Bytes;
+
+            public int Size => 3;
+            
+            public uint Value => (uint)Bytes.ToInt32(0);
+
+            public override string ToString()
+            {
+                return $"{Value:X6}";
+            }
+        }
+
         internal struct CString : IIsfData
         {
             public byte[] Bytes;
@@ -504,7 +517,8 @@ namespace GameRes.Formats.Ikura
 
             public string ToString(Encoding encoding)
             {
-                var count = Bytes[Bytes.Length - 1] == 0 ? Bytes.Length - 1 : Bytes.Length;
+                var count = Bytes.Length;
+                while (count > 0 && Bytes[count - 1] == 0x00) count--;
                 return encoding.GetString(Bytes, 0, count);
             }
 

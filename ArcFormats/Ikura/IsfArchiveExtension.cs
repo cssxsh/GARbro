@@ -143,6 +143,8 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.LS:
                 case IsfInstruction.LSBS:
                     return data.ToArgs(cstring);
+                case IsfInstruction.SRET:
+                    return data.ToArgs();
                 case IsfInstruction.JP:
                 case IsfInstruction.JS:
                     return data.ToArgs(label);
@@ -225,12 +227,29 @@ namespace GameRes.Formats.Ikura
                     return data.ToArgs(uint16, uint16);
                 case IsfInstruction.HXP:
                     return data.ToArgs(uint8, uint8, uint16);
+                case IsfInstruction.HLN:
+                    return data.ToArgs(uint16);
                 case IsfInstruction.HS:
                     return data.ToArgs(uint16, value);
+                case IsfInstruction.HINC:
+                case IsfInstruction.HDEC:
+                    return data.ToArgs(uint16);
                 case IsfInstruction.CALC:
                     return data.ToArgs(assignment);
+                case IsfInstruction.HSG:
+                    return data.ToArgs(uint16, uint16, value);
+                case IsfInstruction.HT:
+                    return data.ToArgs(uint16, uint16, uint16);
                 case IsfInstruction.IF:
                     return data.ToArgs(condition);
+                case IsfInstruction.EXA:
+                    return data.ToArgs(uint16, uint16);
+                case IsfInstruction.EXS:
+                case IsfInstruction.EXC:
+                    return data.ToArgs(value, value, value, uint8);
+                case IsfInstruction.SCP:
+                case IsfInstruction.SSP:
+                    return data.ToArgs(uint16, uint8);
                 case IsfInstruction.VSET:
                     return data.ToArgs(value, value, value);
                 case IsfInstruction.GL:

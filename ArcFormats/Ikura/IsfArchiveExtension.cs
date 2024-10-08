@@ -136,10 +136,13 @@ namespace GameRes.Formats.Ikura
             Func<byte[], int, object> message = (bytes, pos) => bytes.ToIsfMessage(pos);
             Func<byte[], int, object> condition = (bytes, pos) => bytes.ToIsfCondition(pos);
             Func<byte[], int, object> assignment = (bytes, pos) => bytes.ToIsfAssignment(pos);
+            Func<byte[], int, object>[] readers;
 
             // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
             switch (instruction)
             {
+                case IsfInstruction.ED:
+                    return data.ToArgs();
                 case IsfInstruction.LS:
                 case IsfInstruction.LSBS:
                     return data.ToArgs(cstring);
@@ -148,6 +151,8 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.JP:
                 case IsfInstruction.JS:
                     return data.ToArgs(label);
+                case IsfInstruction.RT:
+                    return data.ToArgs();
                 case IsfInstruction.ONJP:
                 case IsfInstruction.ONJS:
                     return data.ToArgs(table);
@@ -213,7 +218,10 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.FT:
                     return data.ToArgs(uint16, uint16, uint16);
                 case IsfInstruction.SP:
-                    return data.ToArgs(uint8, cstring);
+                    readers = Enumerable.Repeat(uint16, 1 + data.Length / 2).ToArray();
+                    readers[0] = uint8;
+                    readers[readers.Length - 1] = uint8;
+                    return data.ToArgs(readers: readers);
                 case IsfInstruction.STS:
                     return data.ToArgs(uint8, uint8);
                 case IsfInstruction.HP:
@@ -251,40 +259,229 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.SSP:
                     return data.ToArgs(uint16, uint8);
                 case IsfInstruction.VSET:
+                case IsfInstruction.GN:
                     return data.ToArgs(value, value, value);
+                case IsfInstruction.GF:
+                    return data.ToArgs();
+                case IsfInstruction.GC:
+                    return data.ToArgs(value, uint8, uint8, uint8);
+                case IsfInstruction.GI:
+                    return data.ToArgs(value, value, uint8, uint8, uint8);
+                case IsfInstruction.GO:
+                    return data.ToArgs(value, uint8, uint8, uint8, uint8);
                 case IsfInstruction.GL:
                     return data.ToArgs(value, cstring);
+                case IsfInstruction.GP:
+                    readers = Enumerable.Repeat(value, 1 + (data.Length - 1) / 4).ToArray();
+                    readers[0] = uint8;
+                    return data.ToArgs(readers: readers);
+                case IsfInstruction.GB:
+                    return data.ToArgs(value, uint8, uint8, uint8, uint8, value, value, value, value);
+                case IsfInstruction.GPB:
+                    return data.ToArgs(value);
+                case IsfInstruction.GPJ:
+                    return data.ToArgs(uint8);
+                case IsfInstruction.PR:
+                    return data.ToArgs(value, value, value);
+                case IsfInstruction.GASTAR:
+                    return data.ToArgs(uint8, uint8, uint8, uint8, uint8, value);
+                case IsfInstruction.GASTOP:
+                    return data.ToArgs();
+                case IsfInstruction.GPI:
+                case IsfInstruction.GPO:
+                    readers = Enumerable.Repeat(value, 1 + (data.Length - 1) / 4).ToArray();
+                    readers[0] = uint8;
+                    return data.ToArgs(readers: readers);
                 case IsfInstruction.GGE:
                     return data.ToArgs(value, value, value, value, value, cstring);
+                case IsfInstruction.GPE:
+                    return data.ToArgs(uint8,
+                        value,
+                        value, value, value, value, // rect
+                        value,
+                        value, value, value, value // rect
+                    );
+                case IsfInstruction.GSCRL:
+                    return data.ToArgs(uint8,
+                        value, 
+                        value, value, value, value, // array
+                        value, value, value, value, // array
+                        value, value, // array
+                        value, value, // array
+                        value
+                    );
+                case IsfInstruction.GV:
+                    return data.ToArgs(uint16, uint8, uint8, value);
+                case IsfInstruction.GAL:
+                    return data.ToArgs();
+                case IsfInstruction.GAOPEN:
+                    return data.ToArgs(uint8, uint8, uint8, uint8, cstring);
+                case IsfInstruction.GASET:
+                case IsfInstruction.GAPOS:
+                case IsfInstruction.GACLOSE:
+                case IsfInstruction.GADELETE:
+                    return data.ToArgs();
+                case IsfInstruction.SGL:
+                    return data.ToArgs(value, value, value, value);
                 case IsfInstruction.ML:
                     return data.ToArgs(cstring, uint8);
+                case IsfInstruction.MP:
+                    return data.ToArgs(uint8, value);
                 case IsfInstruction.MF:
                     return data.ToArgs(value);
+                case IsfInstruction.MS:
+                    return data.ToArgs();
                 case IsfInstruction.SER:
                     return data.ToArgs(cstring, value);
+                case IsfInstruction.SEP:
+                    return data.ToArgs(value, value);
+                case IsfInstruction.SED:
+                    return data.ToArgs(value);
                 case IsfInstruction.PCMON:
                     return data.ToArgs(uint8);
                 case IsfInstruction.PCML:
                     return data.ToArgs(cstring);
+                case IsfInstruction.PCMS:
+                    return data.ToArgs(value);
+                case IsfInstruction.PCMEND:
+                    return data.ToArgs();
+                case IsfInstruction.SES:
+                    return data.ToArgs(value, value);
+                case IsfInstruction.BGMGETPOS:
+                    return data.ToArgs(uint8, uint16);
+                case IsfInstruction.SEGETPOS:
+                    return data.ToArgs(value, uint8, uint16);
+                case IsfInstruction.PCMGETPOS:
+                    return data.ToArgs(uint8, uint16);
+                case IsfInstruction.PCMCN:
+                    return data.ToArgs();
                 case IsfInstruction.IM:
                     return data.ToArgs(uint8, cstring);
+                case IsfInstruction.IC:
+                    return data.ToArgs(value);
+                case IsfInstruction.IMS:
+                    return data.ToArgs(value, value, value, value);
+                case IsfInstruction.IXY:
+                    return data.ToArgs(value, value);
+                case IsfInstruction.IH:
+                    return data.ToArgs(uint8, 
+                        value, value, value, value,
+                        uint8, uint16, uint8, uint8, uint8
+                    );
+                case IsfInstruction.IG:
+                    return data.ToArgs(uint16, uint16, uint8, uint8);
+                case IsfInstruction.IGINIT:
+                case IsfInstruction.IGRELEASE:
+                    return data.ToArgs();
+                case IsfInstruction.IHK:
+                    return data.ToArgs(uint8, 
+                        value, value, value, value,
+                        value, value, value, value
+                    );
+                case IsfInstruction.IHKDEF:
+                    return data.ToArgs(value);
+                case IsfInstruction.IHGL:
+                    return data.ToArgs(cstring, value, value);
+                case IsfInstruction.IHGC:
+                    return data.ToArgs();
+                case IsfInstruction.IHGP:
+                    return data.ToArgs(value, 
+                        value, value, value, value,
+                        value, value, value, value
+                    );
+                case IsfInstruction.CLK:
+                    return data.ToArgs(uint8, value);
+                case IsfInstruction.IGN:
+                    return data.ToArgs(value);
+                case IsfInstruction.DAE:
+                    return data.ToArgs(value, value);
+                case IsfInstruction.DAP:
+                    return data.ToArgs(value, uint8, value);
+                case IsfInstruction.DAS:
+                    return data.ToArgs(value);
+                case IsfInstruction.SETINSIDEVOL:
+                    return data.ToArgs(uint8, value);
+                case IsfInstruction.KIDCLR:
+                    return data.ToArgs();
+                case IsfInstruction.KIDMOJI:
+                    return data.ToArgs(uint24, uint24);
+                case IsfInstruction.KIDPAGE:
+                    return data.ToArgs(uint24, uint24, uint16, uint8, uint16, uint16);
+                case IsfInstruction.KIDSET:
+                    return data.ToArgs(int32);
+                case IsfInstruction.KIDEND:
+                    return data.ToArgs();
+                case IsfInstruction.KIDFN:
+                    return data.ToArgs(int32);
+                case IsfInstruction.KIDHABA:
+                    return data.ToArgs(uint8, uint16, uint16);
+                case IsfInstruction.KIDSCAN:
+                    return data.ToArgs(uint16, value);
+                case IsfInstruction.SETKIDWNDPUTPOS:
+                case IsfInstruction.SETMESWNDPUTPOS:
+                    return data.ToArgs(uint8, value, value, value, value);
+                case IsfInstruction.MSGBOX:
+                    return data.ToArgs();
+                case IsfInstruction.SETSMPRATE:
+                    return data.ToArgs(value);
+                case IsfInstruction.CLKEXMCSET:
+                    return data.ToArgs(value, value, value, value);
+                case IsfInstruction.IRCLK:
+                case IsfInstruction.IROPN:
+                    return data.ToArgs();
+                case IsfInstruction.MPM:
+                case IsfInstruction.MPC:
+                    return data.ToArgs(uint8, uint8);
+                case IsfInstruction.TAGSET:
+                    return data.ToArgs(uint8, cstring);
+                case IsfInstruction.FRAMESET:
+                    return data.ToArgs(uint8, uint8, cstring);
+                case IsfInstruction.RBSET:
+                case IsfInstruction.CBSET:
+                    return data.ToArgs(uint8, uint8, uint8, uint16, cstring);
+                case IsfInstruction.SLDRSET:
+                    return data.ToArgs(uint8, uint8, uint8, uint8, 
+                        cstring, cstring, cstring,
+                        uint8, value, value, value, uint8, uint16, uint16
+                     );
                 case IsfInstruction.OPSL:
                     return data.ToArgs(uint8);
+                case IsfInstruction.OPPROP:
+                    return data.ToArgs();
+                case IsfInstruction.DISABLE:
+                case IsfInstruction.ENABLE:
+                    return data.ToArgs(uint8, uint8, uint8);
                 case IsfInstruction.EXT:
                     return data.ToArgs(uint8);
                 case IsfInstruction.CNF:
                     return data.ToArgs(uint8, cstring);
                 case IsfInstruction.ATIMES:
                     return data.ToArgs(value);
+                case IsfInstruction.AWAIT:
+                    return data.ToArgs();
                 case IsfInstruction.AVIP:
-                    return data.ToArgs(int32, int32, int32, int32, cstring);
+                    return data.ToArgs(value, value, value, value, cstring);
                 case IsfInstruction.PPF:
-                    return data.ToArgs(uint8);
                 case IsfInstruction.SVF:
                     return data.ToArgs(uint8);
                 case IsfInstruction.SETGAMEINFO:
                     return data.ToArgs(cstring);
+                case IsfInstruction.SETFONTSTYLE:
+                    return data.ToArgs(uint8, uint8);
+                case IsfInstruction.SETFONTCOLOR:
+                    return data.ToArgs(uint8, uint8, uint24);
+                case IsfInstruction.TIMERSET:
+                    return data.ToArgs(value);
+                case IsfInstruction.TIMEREND:
+                    return data.ToArgs();
+                case IsfInstruction.TIMERGET:
+                    return data.ToArgs(uint16);
+                case IsfInstruction.GRPOUT:
+                    return data.ToArgs(value, cstring, uint8, uint8, cstring, cstring);
+                case IsfInstruction.EXT_:
+                    return data.ToArgs();
                 default:
+                    Console.Error.WriteLine("Unknown Isf instruction: {0}", instruction);
                     return data.ToArgs();
             }
         }
@@ -596,11 +793,11 @@ namespace GameRes.Formats.Ikura
 
             public int Size => 3;
 
-            public uint Value => (uint)Bytes.ToInt32(0);
+            public uint Value => (uint)Bytes.ToInt24(0);
 
             public override string ToString()
             {
-                return $"{Value:X6}";
+                return $"0x{Value:X6}";
             }
         }
 
@@ -708,13 +905,12 @@ namespace GameRes.Formats.Ikura
                 var type = Id >> 30;
                 switch (type)
                 {
+                    case 0:
+                        return $"{value}";
                     case 1:
                         return $"RAND({value})";
-                    case 2:
-                    case 3:
-                        return $"&{value:X4}";
                     default:
-                        return $"({value})";
+                        return $"&{value:X4}";
                 }
             }
         }
@@ -786,17 +982,17 @@ namespace GameRes.Formats.Ikura
                     var b = new IsfValue { Id = R };
                     switch (C)
                     {
-                        case 0:
+                        case 0x00:
                             return $"{a} == {b}";
-                        case 1:
+                        case 0x01:
                             return $"{a} < {b}";
-                        case 2:
+                        case 0x02:
                             return $"{a} <= {b}";
-                        case 3:
+                        case 0x03:
                             return $"{a} > {b}";
-                        case 4:
+                        case 0x04:
                             return $"{a} >= {b}";
-                        case 5:
+                        case 0x05:
                             return $"{a} != {b}";
                         default:
                             return "FALSE";
@@ -811,16 +1007,16 @@ namespace GameRes.Formats.Ikura
             {
                 switch (Action.Key)
                 {
-                    case 0:
-                        return 1 + 6;
-                    case 1:
+                    case 0x00:
                         return 1 + 2;
+                    case 0x01:
+                        return 1 + 6;
                     default:
                         return 1;
                 }
             }
 
-            public int Size => Terms.Length * 9 + ActionSize() + 1;
+            public int Size => Terms.Length * 10 + ActionSize();
         }
 
         internal struct IsfAssignment : IIsfData
@@ -1268,7 +1464,7 @@ namespace GameRes.Formats.Ikura
 
                             builder.AppendLine();
 
-                            builder.AppendLine("END IF");
+                            builder.AppendLine("    END IF");
                             break;
                         default:
                             builder.Append($"    {Actions[i].Instruction}");

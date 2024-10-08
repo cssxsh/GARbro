@@ -206,16 +206,24 @@ namespace GameRes.Formats.Ikura
                     return data.ToArgs(uint16, uint8);
                 case IsfInstruction.SKS:
                     return data.ToArgs(uint16, uint16, uint8);
+                case IsfInstruction.HF:
+                    return data.ToArgs(uint16, uint16);
                 case IsfInstruction.FT:
                     return data.ToArgs(uint16, uint16, uint16);
                 case IsfInstruction.SP:
                     return data.ToArgs(uint8, cstring);
                 case IsfInstruction.STS:
                     return data.ToArgs(uint8, uint8);
+                case IsfInstruction.HP:
+                    return data.ToArgs(uint8, uint16);
                 case IsfInstruction.ES:
                 case IsfInstruction.EC:
                     return data.ToArgs(uint16, uint16);
                 case IsfInstruction.STC:
+                    return data.ToArgs(uint8, uint8, uint16);
+                case IsfInstruction.HN:
+                    return data.ToArgs(uint16, uint16);
+                case IsfInstruction.HXP:
                     return data.ToArgs(uint8, uint8, uint16);
                 case IsfInstruction.HS:
                     return data.ToArgs(uint16, value);
@@ -1185,8 +1193,7 @@ namespace GameRes.Formats.Ikura
                     {
                         case IsfInstruction.PM:
                         case IsfInstruction.PMP:
-                            builder.Append($"    {Actions[i].Instruction} {Actions[i].Args[0].ToText(Encoding)}");
-                            builder.AppendLine();
+                            builder.AppendLine($"    {Actions[i].Instruction} {Actions[i].Args[0].ToText(Encoding)}");
                             var message = (IsfMessage)Actions[i].Args[1];
                             foreach (var action in message.Actions)
                             {
@@ -1200,28 +1207,27 @@ namespace GameRes.Formats.Ikura
                                 builder.AppendLine();
                             }
 
-                            builder.AppendLine($"END {Actions[i].Instruction}");
+                            builder.AppendLine($"    END {Actions[i].Instruction}");
                             break;
                         case IsfInstruction.IF:
                             var condition = (IsfCondition)Actions[i].Args[0];
-                            builder.Append($"    IF {condition.Terms[0]} ");
+                            builder.AppendLine($"    IF {condition.Terms[0]}");
                             var terms = condition.Terms
                                 .Skip(1)
                                 .GetEnumerator();
 
                             while (terms.MoveNext())
                             {
-                                builder.Append("AND ");
-                                builder.Append(terms.Current);
+                                builder.AppendLine($"        AND {terms.Current}");
                             }
 
                             switch (condition.Action.Key)
                             {
                                 case 0:
-                                    builder.Append("JP");
+                                    builder.Append("        JP");
                                     break;
                                 case 1:
-                                    builder.Append("HS");
+                                    builder.Append("        HS");
                                     break;
                             }
 
@@ -1241,7 +1247,9 @@ namespace GameRes.Formats.Ikura
                                 builder.Append(args.Current);
                             }
 
-                            builder.AppendLine(" END IF");
+                            builder.AppendLine();
+
+                            builder.AppendLine("END IF");
                             break;
                         default:
                             builder.Append($"    {Actions[i].Instruction}");

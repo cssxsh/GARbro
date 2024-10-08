@@ -128,6 +128,7 @@ namespace GameRes.Formats.Ikura
             Func<byte[], int, object> int32 = (bytes, pos) => bytes.ToInt32(pos);
             Func<byte[], int, object> uint8 = (bytes, pos) => bytes.ToUInt8(pos);
             Func<byte[], int, object> uint16 = (bytes, pos) => bytes.ToUInt16(pos);
+            Func<byte[], int, object> uint24 = (bytes, pos) => bytes.ToUInt24(pos);
             Func<byte[], int, object> uint32 = (bytes, pos) => bytes.ToUInt32(pos);
             Func<byte[], int, object> cstring = (bytes, pos) => bytes.ToCString(pos);
             Func<byte[], int, object> istring = (bytes, pos) => bytes.ToIsfString(pos);
@@ -359,6 +360,11 @@ namespace GameRes.Formats.Ikura
         private static byte ToUInt8<Bs>(this Bs bytes, int index) where Bs : IList<byte>
         {
             return bytes[index];
+        }
+        
+        private static UInt24 ToUInt24<Bs>(this Bs bytes, int index) where Bs : IList<byte>
+        {
+            return new UInt24 { Bytes = bytes.Skip(index).Take(3).ToArray() };
         }
 
         private static CString ToCString<Bs>(this Bs bytes, int index) where Bs : IList<byte>

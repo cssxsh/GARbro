@@ -104,7 +104,7 @@ namespace GameRes.Formats.Ikura
 
         private static IsfAssembler ToAssembler(this string code)
         {
-            var lines = code.Split(new []{'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries);
+            var lines = code.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var version = lines
                 .FirstOrDefault(line => line.StartsWith("; version: "))
                 ?.Replace("; version: ", "") ?? "9597";
@@ -295,7 +295,7 @@ namespace GameRes.Formats.Ikura
             var type = data.ToUInt8(index);
             var size = (int)data.ToUInt8(index + 1);
             var used = 0x02;
-            if ((size & 0x80) != 0)
+            if (size > 0x7F)
             {
                 size &= 0x7F;
                 size <<= 8;
@@ -328,7 +328,7 @@ namespace GameRes.Formats.Ikura
         {
             return bytes[index];
         }
-        
+
         private static UInt24 ToUInt24<Bs>(this Bs bytes, int index) where Bs : IList<byte>
         {
             return new UInt24 { Bytes = bytes.Skip(index).Take(3).ToArray() };
@@ -517,7 +517,7 @@ namespace GameRes.Formats.Ikura
                         // AND
                         continue;
                 }
-                
+
                 var end = bytes.ToUInt8(pos);
                 if (end == 0xFF) break;
             }
@@ -554,7 +554,7 @@ namespace GameRes.Formats.Ikura
             public byte[] Bytes;
 
             public int Size => 3;
-            
+
             public uint Value => (uint)Bytes.ToInt32(0);
 
             public override string ToString()
@@ -612,22 +612,23 @@ namespace GameRes.Formats.Ikura
                             offset += 2;
                             continue;
                         default:
-                            if ((Bytes[offset] & 0x80) == 0)
-                            {
-                                buffer.Add(IsfKana[Bytes[offset] * 2]);
-                                buffer.Add(IsfKana[Bytes[offset] * 2 + 1]);
-                                offset += 1;
-                            }
-                            else
+                            if (Bytes[offset] > 0x7F)
                             {
                                 buffer.Add(Bytes[offset]);
                                 buffer.Add(Bytes[offset + 1]);
                                 offset += 2;
                             }
+                            else
+                            {
+                                buffer.Add(IsfKana[Bytes[offset] * 2]);
+                                buffer.Add(IsfKana[Bytes[offset] * 2 + 1]);
+                                offset += 1;
+                            }
+
                             continue;
                     }
                 }
-                
+
                 if (offset != Bytes.Length)
                 {
                     // TODO: throw ...

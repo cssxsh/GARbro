@@ -129,12 +129,11 @@ namespace GameRes.Formats.Ikura
             Func<byte[], int, object> uint8 = (bytes, pos) => bytes.ToUInt8(pos);
             Func<byte[], int, object> uint16 = (bytes, pos) => bytes.ToUInt16(pos);
             Func<byte[], int, object> uint24 = (bytes, pos) => bytes.ToUInt24(pos);
-            Func<byte[], int, object> uint32 = (bytes, pos) => bytes.ToUInt32(pos);
             Func<byte[], int, object> cstring = (bytes, pos) => bytes.ToCString(pos);
-            Func<byte[], int, object> istring = (bytes, pos) => bytes.ToIsfString(pos);
             Func<byte[], int, object> label = (bytes, pos) => bytes.ToIsfLabel(pos);
             Func<byte[], int, object> value = (bytes, pos) => bytes.ToIsfValue(pos);
             Func<byte[], int, object> table = (bytes, pos) => bytes.ToIsfTable(pos);
+            Func<byte[], int, object> message = (bytes, pos) => bytes.ToIsfMessage(pos);
             Func<byte[], int, object> condition = (bytes, pos) => bytes.ToIsfCondition(pos);
             Func<byte[], int, object> assignment = (bytes, pos) => bytes.ToIsfAssignment(pos);
 
@@ -430,6 +429,87 @@ namespace GameRes.Formats.Ikura
             return new IsfTable { Value = id, Labels = arr };
         }
 
+        private static IsfMessage ToIsfMessage<Bs>(this Bs bytes, int index) where Bs : IList<byte>
+        {
+            var pos = index;
+            var actions = new List<KeyValuePair<byte, object[]>>();
+            while (pos < bytes.Count)
+            {
+                var type = bytes.ToUInt8(pos);
+                pos += 1;
+                var args = new List<object>();
+                switch (type)
+                {
+                    case 0x00:
+                        break;
+                    case 0x01:
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        break;
+                    case 0x02:
+                        break;
+                    case 0x03:
+                        break;
+                    case 0x04:
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        break;
+                    case 0x05:
+                        // StopAction
+                        break;
+                    case 0x06:
+                        break;
+                    case 0x07:
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        break;
+                    case 0x08:
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 4;
+                        break;
+                    case 0x09:
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        break;
+                    case 0x0A:
+                        args.Add(bytes.ToUInt16(pos));
+                        pos += 2;
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        break;
+                    case 0x0B:
+                    case 0x0C:
+                    case 0x10:
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        args.Add(bytes.ToUInt8(pos));
+                        pos += 1;
+                        break;
+                    case 0x11:
+                        args.Add(bytes.ToIsfValue(pos));
+                        pos += 4;
+                        break;
+                    case 0xFF:
+                        var str = bytes.ToIsfString(pos);
+                        args.Add(str);
+                        pos += str.Size;
+                        break;
+                }
+
+                actions.Add(new KeyValuePair<byte, object[]>(type, args.ToArray()));
+            }
+
+            return new IsfMessage { Actions = actions.ToArray() };
+        }
+
         private static IsfCondition ToIsfCondition<Bs>(this Bs bytes, int index) where Bs : IList<byte>
         {
             var pos = index;
@@ -646,6 +726,40 @@ namespace GameRes.Formats.Ikura
                 builder.Append("]");
                 return builder.ToString();
             }
+        }
+
+        internal struct IsfMessage : IIsfData
+        {
+            public KeyValuePair<byte, object[]>[] Actions;
+
+            public int Size => Actions.Sum(action =>
+            {
+                switch (action.Key)
+                {
+                    case 0x01:
+                        return 1 + 4;
+                    case 0x04:
+                        return 1 + 1;
+                    case 0x07:
+                        return 1 + 1;
+                    case 0x08:
+                        return 1 + 4;
+                    case 0x09:
+                        return 1 + 1;
+                    case 0x0A:
+                        return 1 + 4;
+                    case 0x0B:
+                    case 0x0C:
+                    case 0x10:
+                        return 1 + 2;
+                    case 0x11:
+                        return 1 + 4;
+                    case 0xFF:
+                        return 1 + ((IsfString)action.Value[0]).Size;
+                    default:
+                        return 1;
+                }
+            });
         }
 
         internal struct IsfCondition : IIsfData
@@ -1105,6 +1219,25 @@ namespace GameRes.Formats.Ikura
                     // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
                     switch (Actions[i].Instruction)
                     {
+                        case IsfInstruction.PM:
+                        case IsfInstruction.PMP:
+                            builder.Append($"    {Actions[i].Instruction} {Actions[i].Args[0].ToText(Encoding)}");
+                            builder.AppendLine();
+                            var message = (IsfMessage)Actions[i].Args[1];
+                            foreach (var action in message.Actions)
+                            {
+                                builder.Append($"        {action.Key.ToText(Encoding)}");
+                                foreach (var arg in action.Value)
+                                {
+                                    builder.Append(", ");
+                                    builder.Append(arg.ToText(Encoding));
+                                }
+
+                                builder.AppendLine();
+                            }
+
+                            builder.AppendLine($"END {Actions[i].Instruction}");
+                            break;
                         case IsfInstruction.IF:
                             builder.AppendLine($"    {Actions[i].Args[0]}");
                             break;

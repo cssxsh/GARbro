@@ -197,12 +197,26 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.PM:
                 case IsfInstruction.PMP:
                     return data.ToArgs(uint8, message);
-                case IsfInstruction.FLN:
-                    return data.ToArgs(uint16);
                 case IsfInstruction.WSH:
-                    return data.ToArgs(value);
                 case IsfInstruction.WSS:
                     return data.ToArgs(value);
+                case IsfInstruction.FLN:
+                    return data.ToArgs(uint16);
+                case IsfInstruction.SK:
+                    return data.ToArgs(uint16, uint8);
+                case IsfInstruction.SKS:
+                    return data.ToArgs(uint16, uint16, uint8);
+                case IsfInstruction.FT:
+                    return data.ToArgs(uint16, uint16, uint16);
+                case IsfInstruction.SP:
+                    return data.ToArgs(uint8, cstring);
+                case IsfInstruction.STS:
+                    return data.ToArgs(uint8, uint8);
+                case IsfInstruction.ES:
+                case IsfInstruction.EC:
+                    return data.ToArgs(uint16, uint16);
+                case IsfInstruction.STC:
+                    return data.ToArgs(uint8, uint8, uint16);
                 case IsfInstruction.HS:
                     return data.ToArgs(uint16, value);
                 case IsfInstruction.CALC:

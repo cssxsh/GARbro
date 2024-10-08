@@ -34,12 +34,12 @@ namespace GameRes.Formats.Ikura
 {
     public static class IsfArchiveExtension
     {
-        internal static IsfAssembler Decompile(this IsfArchive isf, byte[] data)
+        internal static IsfAssembler Decompile(this byte[] data)
         {
             return data.ToAssembler();
         }
 
-        internal static IsfAssembler Compile(this IsfArchive isf, string code)
+        internal static IsfAssembler Compile(this string code)
         {
             return code.ToAssembler();
         }
@@ -104,7 +104,7 @@ namespace GameRes.Formats.Ikura
 
         private static IsfAssembler ToAssembler(this string code)
         {
-            var lines = code.Split('\n');
+            var lines = code.Split(new []{'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries);
             var version = lines
                 .FirstOrDefault(line => line.StartsWith("; version: "))
                 ?.Replace("; version: ", "") ?? "9597";
@@ -496,6 +496,7 @@ namespace GameRes.Formats.Ikura
         }
 
         private struct CString : IIsfData
+        internal struct CString : IIsfData
         {
             public byte[] Bytes;
 
@@ -513,7 +514,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfString : IIsfData
+        internal struct IsfString : IIsfData
         {
             public byte[] Bytes;
 
@@ -573,7 +574,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfLabel : IIsfData
+        internal struct IsfLabel : IIsfData
         {
             public ushort Index;
 
@@ -585,7 +586,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfValue : IIsfData
+        internal struct IsfValue : IIsfData
         {
             public uint Id;
 
@@ -608,7 +609,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfTable : IIsfData
+        internal struct IsfTable : IIsfData
         {
             public uint Value;
             public ushort[] Labels;
@@ -627,7 +628,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfCondition : IIsfData
+        internal struct IsfCondition : IIsfData
         {
             public struct Term
             {
@@ -701,7 +702,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private struct IsfAssignment : IIsfData
+        internal struct IsfAssignment : IIsfData
         {
             public ushort Variable;
             public KeyValuePair<byte, uint>[] Terms;
@@ -1087,13 +1088,12 @@ namespace GameRes.Formats.Ikura
                         case IsfInstruction.IF:
                             builder.AppendLine($"    {Actions[i].Args[0]}");
                             break;
-                        case IsfInstruction.CALC:
                         default:
                             builder.Append($"    {Actions[i].Instruction}");
                             var elements = Actions[i].Args
                                 .Select(arg => arg.ToText(Encoding))
                                 .GetEnumerator();
-                            
+
                             if (elements.MoveNext())
                             {
                                 builder.Append(" ");

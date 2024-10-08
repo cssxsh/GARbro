@@ -149,92 +149,60 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.ONJP:
                 case IsfInstruction.ONJS:
                     return data.ToArgs(table);
+                case IsfInstruction.CHILD:
+                    return data.ToArgs(cstring);
+                case IsfInstruction.CW:
+                    return data.ToArgs(uint8, value, value, value, value, uint8);
+                case IsfInstruction.CP:
+                case IsfInstruction.CIR:
+                    return data.ToArgs(uint8, uint8, cstring);
+                case IsfInstruction.CPS:
+                    return data.ToArgs(uint8, uint24, uint24, uint24, uint24, uint24, uint24);
+                case IsfInstruction.CIP:
+                    return data.ToArgs(uint8, uint8, value, value, value);
                 case IsfInstruction.CSET:
                     return data.ToArgs(uint8, uint8, value, value, value, value, cstring);
+                case IsfInstruction.CWO:
+                    return data.ToArgs(uint8, value, uint8);
                 case IsfInstruction.CWC:
                     return data.ToArgs(uint8);
+                case IsfInstruction.CC:
+                    return data.ToArgs(uint8, uint16, uint8);
+                case IsfInstruction.CRESET:
+                case IsfInstruction.CRND:
+                    return data.ToArgs();
+                case IsfInstruction.CTEXT:
+                    return data.ToArgs(uint8, value, value, value, value, cstring,
+                        value, value, value, value, value, value);
+                case IsfInstruction.WS:
+                    return data.ToArgs(uint8, value, value, value, value, uint8);
                 case IsfInstruction.WP:
-                    return data.ToArgs(uint16, cstring);
+                    return data.ToArgs(uint8, uint8, cstring);
+                case IsfInstruction.WL:
+                    return data.ToArgs(uint8, cstring);
+                case IsfInstruction.WW:
+                    return data.ToArgs(uint8, value, value, uint8);
+                case IsfInstruction.CN:
+                    return data.ToArgs(uint8, uint8);
                 case IsfInstruction.CNS:
                     return data.ToArgs(uint8, uint8, cstring);
+                case IsfInstruction.PF:
+                case IsfInstruction.PB:
+                    return data.ToArgs(uint8, value);
+                case IsfInstruction.PJ:
+                    return data.ToArgs(uint8, uint8);
                 case IsfInstruction.WO:
                 case IsfInstruction.WC:
                     return data.ToArgs(uint8);
                 case IsfInstruction.PM:
-                    var readers = new List<Func<byte[], int, object>>();
-                    var pos = 0;
-                    readers.Add(uint8);
-                    pos += 1;
-                    while (pos < data.Length)
-                    {
-                        var type = data.ToUInt8(pos);
-                        readers.Add(uint8);
-                        pos += 1;
-                        switch (type)
-                        {
-                            case 0x00:
-                                break;
-                            case 0x01:
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                pos += 4;
-                                break;
-                            case 0x02:
-                                break;
-                            case 0x03:
-                                break;
-                            case 0x04:
-                                readers.Add(uint8);
-                                pos += 1;
-                                break;
-                            case 0x05:
-                                // StopAction
-                                break;
-                            case 0x06:
-                                break;
-                            case 0x07:
-                                readers.Add(uint8);
-                                pos += 1;
-                                break;
-                            case 0x08:
-                                readers.Add(value);
-                                pos += 4;
-                                break;
-                            case 0x09:
-                                readers.Add(uint8);
-                                pos += 1;
-                                break;
-                            case 0x0A:
-                                pos += 4;
-                                readers.Add(uint16);
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                break;
-                            case 0x0B:
-                            case 0x0C:
-                            case 0x10:
-                                pos += 2;
-                                readers.Add(uint8);
-                                readers.Add(uint8);
-                                break;
-                            case 0x11:
-                                pos += 4;
-                                readers.Add(value);
-                                break;
-                            case 0xFF:
-                                readers.Add(istring);
-                                // pos = Array.IndexOf(data, 0, pos) + 1;
-                                // if (pos == 0) pos = data.Length;
-                                pos = data.Length;
-                                break;
-                        }
-                    }
-
-                    return data.ToArgs(readers: readers.ToArray());
+                case IsfInstruction.PMP:
+                    return data.ToArgs(uint8, message);
                 case IsfInstruction.FLN:
                     return data.ToArgs(uint16);
+                case IsfInstruction.WSH:
+                    return data.ToArgs(value);
+                case IsfInstruction.WSS:
+                    return data.ToArgs(value);
                 case IsfInstruction.HS:
                     return data.ToArgs(uint16, value);
                 case IsfInstruction.CALC:

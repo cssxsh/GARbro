@@ -779,29 +779,6 @@ namespace GameRes.Formats.Ikura
             }
 
             public int Size => Terms.Length * 9 + ActionSize() + 1;
-
-            public override string ToString()
-            {
-                var builder = new StringBuilder();
-                builder.Append($"IF {Terms[0]} ");
-                for (var i = 1; i < Terms.Length; i++)
-                {
-                    builder.Append($"AND {Terms[i]} ");
-                }
-
-                switch (Action.Key)
-                {
-                    case 0:
-                        builder.Append($"JP {string.Join(", ", Action.Value)} ");
-                        break;
-                    case 1:
-                        builder.Append($"HS {string.Join(", ", Action.Value)} ");
-                        break;
-                }
-
-                builder.Append("END IF");
-                return builder.ToString();
-            }
         }
 
         internal struct IsfAssignment : IIsfData
@@ -1184,6 +1161,10 @@ namespace GameRes.Formats.Ikura
                         builder.AppendLine($"#LABEL_{j}: ");
                     }
 
+                    var args = Actions[i].Args
+                        .Select(arg => arg.ToText(Encoding))
+                        .GetEnumerator();
+
                     // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
                     switch (Actions[i].Instruction)
                     {
@@ -1207,24 +1188,59 @@ namespace GameRes.Formats.Ikura
                             builder.AppendLine($"END {Actions[i].Instruction}");
                             break;
                         case IsfInstruction.IF:
-                            builder.AppendLine($"    {Actions[i].Args[0]}");
-                            break;
-                        default:
-                            builder.Append($"    {Actions[i].Instruction}");
-                            var elements = Actions[i].Args
+                            var condition = (IsfCondition)Actions[i].Args[0];
+                            builder.Append($"    IF {condition.Terms[0]} ");
+                            var terms = condition.Terms
+                                .Skip(1)
+                                .GetEnumerator();
+
+                            while (terms.MoveNext())
+                            {
+                                builder.Append("AND ");
+                                builder.Append(terms.Current);
+                            }
+
+                            switch (condition.Action.Key)
+                            {
+                                case 0:
+                                    builder.Append("JP");
+                                    break;
+                                case 1:
+                                    builder.Append("HS");
+                                    break;
+                            }
+
+                            args = condition.Action.Value
                                 .Select(arg => arg.ToText(Encoding))
                                 .GetEnumerator();
 
-                            if (elements.MoveNext())
+                            if (args.MoveNext())
                             {
                                 builder.Append(" ");
-                                builder.Append(elements.Current);
+                                builder.Append(args.Current);
                             }
 
-                            while (elements.MoveNext())
+                            while (args.MoveNext())
                             {
                                 builder.Append(", ");
-                                builder.Append(elements.Current);
+                                builder.Append(args.Current);
+                            }
+
+                            builder.AppendLine(" END IF");
+                            break;
+                        default:
+                            builder.Append($"    {Actions[i].Instruction}");
+
+                            if (args.MoveNext())
+                            {
+                                builder.Append(" ");
+                                builder.Append(args.Current);
+                            }
+
+                            while (args.MoveNext())
+                            {
+                                builder.Append(", ");
+                                builder.Append(args.Current);
                             }
 
                             builder.AppendLine();

@@ -67,28 +67,30 @@ namespace GameRes.Formats.Ikura
         {
             var offset = data.ToInt32(0);
             var version = data.ToUInt16(4);
-            var table = data.Take(offset).ToArray().ToTable(8);
+            var table = Enumerable.Range(0, (offset - 8) / 4)
+                .Select(i => data.ToInt32(8 + i * 4))
+                .ToArray();
 
             var pos = offset;
             var actions = new List<IsfAction>();
-            var labels = new int[table.Count];
+            var labels = new int[table.Length];
 
             while (pos < data.Length)
             {
-                for (var j = 0; j < table.Count; j++)
+                for (var j = 0; j < table.Length; j++)
                 {
                     if (table[j] != pos - offset) continue;
                     labels[j] = actions.Count;
                 }
 
                 var operation = data.ToOperation(pos);
-                pos += operation.Length;
                 var instruction = (IsfInstruction)operation.Type;
+                pos += operation.Length;
 
                 var action = new IsfAction
                 {
                     Instruction = instruction,
-                    Args = instruction.Parse(data.Take(pos).Skip(operation.Data).ToArray())
+                    Args = instruction.Parse(data.Slice(operation.Data, pos)).ToArray()
                 };
                 actions.Add(action);
             }
@@ -98,7 +100,7 @@ namespace GameRes.Formats.Ikura
                 Version = version,
                 Actions = actions.ToArray(),
                 Encoding = Encoding.GetEncoding("Shift-JIS"),
-                Labels = labels.ToArray()
+                Labels = labels
             };
         }
 
@@ -123,7 +125,7 @@ namespace GameRes.Formats.Ikura
             return assembler;
         }
 
-        private static List<object> Parse(this IsfInstruction instruction, byte[] data)
+        private static object[] Parse(this IsfInstruction instruction, byte[] data)
         {
             Func<byte[], int, object> int32 = (bytes, pos) => bytes.ToInt32(pos);
             Func<byte[], int, object> uint8 = (bytes, pos) => bytes.ToUInt8(pos);
@@ -486,7 +488,7 @@ namespace GameRes.Formats.Ikura
             }
         }
 
-        private static List<object> ToArgs(this byte[] data, params Func<byte[], int, object>[] readers)
+        private static object[] ToArgs(this byte[] data, params Func<byte[], int, object>[] readers)
         {
             var args = new List<object>();
             var pos = 0;
@@ -525,7 +527,7 @@ namespace GameRes.Formats.Ikura
                 args.AddRange(data.Skip(pos).Cast<object>());
             }
 
-            return args;
+            return args.ToArray();
         }
 
         private static IsfOperation ToOperation(this byte[] data, int index)
@@ -549,15 +551,12 @@ namespace GameRes.Formats.Ikura
             };
         }
 
-        private static List<int> ToTable(this byte[] data, int index)
+        private static T[] Slice<T>(this T[] sourceArray, int start, int end)
         {
-            var labels = new List<int>();
-            for (var i = index; i < data.Length; i += 4)
-            {
-                labels.Add(data.ToInt32(i));
-            }
-
-            return labels;
+            var size = end - start;
+            var destinationArray = new T[size];
+            Array.Copy(sourceArray, start, destinationArray, 0, size);
+            return destinationArray;
         }
 
         #region ISF Data
@@ -1375,7 +1374,7 @@ namespace GameRes.Formats.Ikura
         internal struct IsfAction
         {
             public IsfInstruction Instruction;
-            public List<object> Args;
+            public object[] Args;
         }
 
         internal class IsfAssembler

@@ -305,7 +305,7 @@ namespace GameRes.Formats.Ikura
                     );
                 case IsfInstruction.GSCRL:
                     return data.ToArgs(uint8,
-                        value, 
+                        value,
                         value, value, value, value, // array
                         value, value, value, value, // array
                         value, value, // array
@@ -366,7 +366,7 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.IXY:
                     return data.ToArgs(value, value);
                 case IsfInstruction.IH:
-                    return data.ToArgs(uint8, 
+                    return data.ToArgs(uint8,
                         value, value, value, value,
                         uint8, uint16, uint8, uint8, uint8
                     );
@@ -376,7 +376,7 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.IGRELEASE:
                     return data.ToArgs();
                 case IsfInstruction.IHK:
-                    return data.ToArgs(uint8, 
+                    return data.ToArgs(uint8,
                         value, value, value, value,
                         value, value, value, value
                     );
@@ -387,7 +387,7 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.IHGC:
                     return data.ToArgs();
                 case IsfInstruction.IHGP:
-                    return data.ToArgs(value, 
+                    return data.ToArgs(value,
                         value, value, value, value,
                         value, value, value, value
                     );
@@ -423,7 +423,7 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.SETMESWNDPUTPOS:
                     return data.ToArgs(uint8, value, value, value, value);
                 case IsfInstruction.MSGBOX:
-                    return data.ToArgs();
+                    return data.ToArgs(uint8, uint8, uint8, uint8, cstring, uint8);
                 case IsfInstruction.SETSMPRATE:
                     return data.ToArgs(value);
                 case IsfInstruction.CLKEXMCSET:
@@ -432,6 +432,9 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.IROPN:
                     return data.ToArgs();
                 case IsfInstruction.MPM:
+                    return data.ToUInt8(1) == 0
+                        ? data.ToArgs(uint8, uint8)
+                        : data.ToArgs(uint8, uint8, message);
                 case IsfInstruction.MPC:
                     return data.ToArgs(uint8, uint8);
                 case IsfInstruction.TAGSET:
@@ -442,10 +445,10 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.CBSET:
                     return data.ToArgs(uint8, uint8, uint8, uint16, cstring);
                 case IsfInstruction.SLDRSET:
-                    return data.ToArgs(uint8, uint8, uint8, uint8, 
+                    return data.ToArgs(uint8, uint8, uint8, uint8,
                         cstring, cstring, cstring,
                         uint8, value, value, value, uint8, uint16, uint16
-                     );
+                    );
                 case IsfInstruction.OPSL:
                     return data.ToArgs(uint8);
                 case IsfInstruction.OPPROP:
@@ -483,7 +486,6 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.EXT_:
                     return data.ToArgs();
                 default:
-                    Console.Error.WriteLine("Unknown Isf instruction: {0}", instruction);
                     return data.ToArgs();
             }
         }
@@ -1408,8 +1410,7 @@ namespace GameRes.Formats.Ikura
                         case IsfInstruction.PM:
                         case IsfInstruction.PMP:
                             builder.AppendLine($"    {Actions[i].Instruction} {Actions[i].Args[0].ToText(Encoding)}");
-                            var message = (IsfMessage)Actions[i].Args[1];
-                            foreach (var action in message.Actions)
+                            foreach (var action in ((IsfMessage)Actions[i].Args[1]).Actions)
                             {
                                 builder.Append($"        {action.Key.ToText(Encoding)}");
                                 foreach (var arg in action.Value)
@@ -1464,6 +1465,34 @@ namespace GameRes.Formats.Ikura
                             builder.AppendLine();
 
                             builder.AppendLine("    END IF");
+                            break;
+                        case IsfInstruction.MPM:
+                            builder.Append("    MPM ");
+                            if ((byte)Actions[i].Args[1] == 0)
+                            {
+                                while (args.MoveNext())
+                                {
+                                    builder.Append(", ");
+                                    builder.Append(args.Current);
+                                }
+                                builder.AppendLine();
+                                break;
+                            }
+                            builder.AppendLine($"0x{Actions[i].Args[0]:X2}, 0x{Actions[i].Args[1]:X2}");
+
+                            foreach (var action in ((IsfMessage)Actions[i].Args[2]).Actions)
+                            {
+                                builder.Append($"        {action.Key.ToText(Encoding)}");
+                                foreach (var arg in action.Value)
+                                {
+                                    builder.Append(", ");
+                                    builder.Append(arg.ToText(Encoding));
+                                }
+
+                                builder.AppendLine();
+                            }
+
+                            builder.AppendLine("    END MPM");
                             break;
                         default:
                             builder.Append($"    {Actions[i].Instruction}");

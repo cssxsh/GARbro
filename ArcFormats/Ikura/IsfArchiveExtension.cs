@@ -26,8 +26,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 
 namespace GameRes.Formats.Ikura
@@ -63,6 +65,35 @@ namespace GameRes.Formats.Ikura
             }
         }
 
+        private static object ToArg(this string text, Encoding encoding)
+        {
+            switch (text[0])
+            {
+                case 'L':
+                    return IsfLabel.Parse(text);
+                case '0':
+                    if (text == "0") return new IsfValue { Id = 0 };
+                    // hex
+                    switch (text.Length)
+                    {
+                        case 4: // 0x00
+                            return byte.Parse(text.Substring(2), NumberStyles.HexNumber);
+                        case 6: // 0x0000
+                            return ushort.Parse(text.Substring(2), NumberStyles.HexNumber);
+                        case 8: // 0x000000
+                            return UInt24.Parse(text);
+                        default: // 0x00000000
+                            return uint.Parse(text.Substring(2), NumberStyles.HexNumber);
+                    }
+                case '\'':
+                    return new CString { Bytes = encoding.GetBytes(text.Trim('\'')) };
+                case '`':
+                    return IsfString.Encode(new CString { Bytes = encoding.GetBytes(text.Trim('`')) });
+                default:
+                    return IsfValue.Parse(text);
+            }
+        }
+
         private static IsfAssembler ToAssembler(this byte[] data)
         {
             var offset = data.ToInt32(0);
@@ -90,7 +121,7 @@ namespace GameRes.Formats.Ikura
                 var action = new IsfAction
                 {
                     Instruction = instruction,
-                    Args = instruction.Parse(data.Slice(operation.Data, pos)).ToArray()
+                    Args = instruction.Parse(data.Slice(operation.Data, pos))
                 };
                 actions.Add(action);
             }
@@ -107,19 +138,168 @@ namespace GameRes.Formats.Ikura
         private static IsfAssembler ToAssembler(this string code)
         {
             var lines = code.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var version = lines
-                .FirstOrDefault(line => line.StartsWith("; version: "))
-                ?.Replace("; version: ", "") ?? "9597";
-            var encoding = lines
-                .FirstOrDefault(line => line.StartsWith("; encoding: "))
-                ?.Replace("; encoding: ", "") ?? "Shift-JIS";
+            var version = ushort.Parse(
+                (lines.FirstOrDefault(line => line.StartsWith("; version: ")) ?? "9597")
+                    .Replace("; version: ", "").Trim()
+            );
+            var encoding = Encoding.GetEncoding(
+                (lines.FirstOrDefault(line => line.StartsWith("; encoding: ")) ?? "Shift-JIS")
+                    .Replace("; encoding: ", "").Trim()
+            );
+
+            var actions = new List<IsfAction>();
+            var table = new List<KeyValuePair<int, int>>();
+
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (lines[i].StartsWith("#LABEL_"))
+                {
+                    var index = int.Parse(Regex.Match(lines[i], @"#LABEL_([0-9]+)").Groups[1].Value);
+                    table.Add(new KeyValuePair<int, int>(index, actions.Count));
+                    continue;
+                }
+
+                if (!lines[i].StartsWith("    ")) continue;
+
+                var name = Regex.Match(lines[i], @"    (\w+)").Groups[1].Value;
+                if (!Enum.TryParse(name, out IsfInstruction instruction)) throw new FormatException(lines[i]);
+                var args = new List<object>();
+
+                // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
+                switch (instruction)
+                {
+                    case IsfInstruction.ONJP:
+                    case IsfInstruction.ONJS:
+                        args.Add(IsfTable.Parse(lines[i].Substring(9)));
+                        break;
+                    case IsfInstruction.PM:
+                    case IsfInstruction.PMP:
+                    {
+                        args.AddRange(lines[i]
+                            .Substring(4 + instruction.ToString().Length)
+                            .Split(',')
+                            .Where(s => !string.IsNullOrEmpty(s))
+                            .Select(s => s.Trim().ToArg(encoding))
+                        );
+                        var messages = new List<KeyValuePair<byte, object[]>>();
+                        while (!lines[++i].StartsWith("    END"))
+                        {
+                            if (lines[i].StartsWith(";")) continue;
+                            var parts = lines[i]
+                                .Substring(8)
+                                .Split(',')
+                                .Where(s => !string.IsNullOrEmpty(s))
+                                .Select(s => s.Trim().ToArg(encoding))
+                                .ToArray();
+                            var type = (byte)parts[0];
+                            var data = parts.Slice(1, parts.Length);
+                            var message = new KeyValuePair<byte, object[]>(type, data);
+                            messages.Add(message);
+                        }
+
+                        args.Add(new IsfMessage { Actions = messages.ToArray() });
+                    }
+                        break;
+                    case IsfInstruction.CALC:
+                        args.Add(IsfAssignment.Parse(lines[i].Substring(9)));
+                        break;
+                    case IsfInstruction.IF:
+                    {
+                        var terms = new List<IsfCondition.Term> { IsfCondition.Term.Parse(lines[i].Substring(7)) };
+                        var op = new KeyValuePair<byte, object[]>();
+                        while (!lines[++i].StartsWith("    END"))
+                        {
+                            if (lines[i].StartsWith(";")) continue;
+                            if (lines[i].StartsWith("        AND"))
+                            {
+                                terms.Add(IsfCondition.Term.Parse(lines[i].Substring(12)));
+                                continue;
+                            }
+
+                            if (lines[i].StartsWith("        JP"))
+                            {
+                                op = new KeyValuePair<byte, object[]>(0x00, lines[i]
+                                    .Substring(10)
+                                    .Split(',')
+                                    .Where(s => !string.IsNullOrEmpty(s))
+                                    .Select(s => s.Trim().ToArg(encoding))
+                                    .ToArray());
+                                continue;
+                            }
+
+                            if (lines[i].StartsWith("        HS"))
+                            {
+                                op = new KeyValuePair<byte, object[]>(0x01, lines[i]
+                                    .Substring(10)
+                                    .Split(',')
+                                    .Where(s => !string.IsNullOrEmpty(s))
+                                    .Select(s => s.Trim().ToArg(encoding))
+                                    .ToArray());
+                                continue;
+                            }
+                        }
+
+                        args.Add(new IsfCondition { Terms = terms.ToArray(), Action = op });
+                    }
+                        break;
+                    case IsfInstruction.MPM:
+                    {
+                        args.AddRange(lines[i]
+                            .Substring(4 + instruction.ToString().Length)
+                            .Split(',')
+                            .Where(s => !string.IsNullOrEmpty(s))
+                            .Select(s => s.Trim().ToArg(encoding))
+                        );
+                        if ((byte)args[1] == 0x00) break;
+                        var messages = new List<KeyValuePair<byte, object[]>>();
+                        while (!lines[++i].StartsWith("    END"))
+                        {
+                            if (lines[i].StartsWith(";")) continue;
+                            var parts = lines[i]
+                                .Substring(8)
+                                .Split(',')
+                                .Where(s => !string.IsNullOrEmpty(s))
+                                .Select(s => s.Trim().ToArg(encoding))
+                                .ToArray();
+                            var type = (byte)parts[0];
+                            var data = parts.Slice(1, parts.Length);
+                            var message = new KeyValuePair<byte, object[]>(type, data);
+                            messages.Add(message);
+                        }
+
+                        args.Add(new IsfMessage { Actions = messages.ToArray() });
+                    }
+                        break;
+                    default:
+                        args.AddRange(lines[i]
+                            .Substring(4 + instruction.ToString().Length)
+                            .Split(',')
+                            .Where(s => !string.IsNullOrEmpty(s))
+                            .Select(s => s.Trim().ToArg(encoding))
+                        );
+                        break;
+                }
+
+                var action = new IsfAction
+                {
+                    Instruction = instruction,
+                    Args = args.ToArray()
+                };
+                actions.Add(action);
+            }
+
+            var labels = new int[table.Count];
+            foreach (var pair in table)
+            {
+                labels[pair.Key] = pair.Value;
+            }
 
             var assembler = new IsfAssembler
             {
-                Version = ushort.Parse(version),
-                Actions = new IsfAction[] { },
-                Encoding = Encoding.GetEncoding(encoding),
-                Labels = new int[] { }
+                Version = version,
+                Actions = actions.ToArray(),
+                Encoding = encoding,
+                Labels = labels
             };
 
             return assembler;
@@ -127,10 +307,10 @@ namespace GameRes.Formats.Ikura
 
         private static object[] Parse(this IsfInstruction instruction, byte[] data)
         {
-            Func<byte[], int, object> int32 = (bytes, pos) => bytes.ToInt32(pos);
             Func<byte[], int, object> uint8 = (bytes, pos) => bytes.ToUInt8(pos);
             Func<byte[], int, object> uint16 = (bytes, pos) => bytes.ToUInt16(pos);
             Func<byte[], int, object> uint24 = (bytes, pos) => bytes.ToUInt24(pos);
+            Func<byte[], int, object> uint32 = (bytes, pos) => bytes.ToUInt32(pos);
             Func<byte[], int, object> cstring = (bytes, pos) => bytes.ToCString(pos);
             Func<byte[], int, object> label = (bytes, pos) => bytes.ToIsfLabel(pos);
             Func<byte[], int, object> value = (bytes, pos) => bytes.ToIsfValue(pos);
@@ -410,11 +590,11 @@ namespace GameRes.Formats.Ikura
                 case IsfInstruction.KIDPAGE:
                     return data.ToArgs(uint24, uint24, uint16, uint8, uint16, uint16);
                 case IsfInstruction.KIDSET:
-                    return data.ToArgs(int32);
+                    return data.ToArgs(uint32);
                 case IsfInstruction.KIDEND:
                     return data.ToArgs();
                 case IsfInstruction.KIDFN:
-                    return data.ToArgs(int32);
+                    return data.ToArgs(uint32);
                 case IsfInstruction.KIDHABA:
                     return data.ToArgs(uint8, uint16, uint16);
                 case IsfInstruction.KIDSCAN:
@@ -800,6 +980,19 @@ namespace GameRes.Formats.Ikura
             {
                 return $"0x{Value:X6}";
             }
+
+            public static UInt24 Parse(string s)
+            {
+                return new UInt24
+                {
+                    Bytes = new[]
+                    {
+                        byte.Parse(s.Substring(6, 2), NumberStyles.HexNumber),
+                        byte.Parse(s.Substring(4, 2), NumberStyles.HexNumber),
+                        byte.Parse(s.Substring(2, 2), NumberStyles.HexNumber),
+                    }
+                };
+            }
         }
 
         internal struct CString : IIsfData
@@ -868,12 +1061,71 @@ namespace GameRes.Formats.Ikura
                     }
                 }
 
-                if (offset != Bytes.Length)
+                return new CString { Bytes = buffer.ToArray() };
+            }
+
+            public static IsfString Encode(CString s)
+            {
+                var buffer = new List<byte>(s.Bytes.Length);
+                for (var i = 0; i < s.Bytes.Length; i++)
                 {
-                    // TODO: throw ...
+                    var j = 0;
+                    switch (s.Bytes[i])
+                    {
+                        case 0x00:
+                            buffer.Add(0x00);
+                            break;
+                        case 0x82:
+                            if (s.Bytes[i + 1] == IsfKana[0x5D])
+                            {
+                                buffer.Add(0x5C);
+                                buffer.Add(0x00);
+                                i++;
+                                break;
+                            }
+                            
+                            for (j = 3; j < IsfKana.Length; j += 2)
+                            {
+                                if (s.Bytes[i + 1] == IsfKana[j]) break;
+                            }
+                            if (j < IsfKana.Length)
+                            {
+                                buffer.Add(0x5C);
+                                buffer.Add((byte)(j / 2));
+                                buffer.Add(0x00);
+                                i++;
+                                break;
+                            }
+                            
+                            buffer.Add(s.Bytes[i]);
+                            break;
+                        default:
+                            if (s.Bytes[i] <= 0x7F)
+                            {
+                                buffer.Add(0x7F);
+                                buffer.Add(s.Bytes[i]);
+                                break;
+                            }
+                            var index = 3;
+                            for (j = 2; index < IsfKana.Length; index += 2)
+                            {
+                                if (s.Bytes[i] == IsfKana[j] && s.Bytes[i + 1] == IsfKana[j + 1]) break;
+                            }
+                            if (j < IsfKana.Length)
+                            {
+                                buffer.Add((byte)(j / 2));
+                                i++;
+                                break;
+                            }
+                            
+                            buffer.Add(s.Bytes[i]);
+                            buffer.Add(s.Bytes[i + 1]);
+                            i++;
+                            break;
+                    }
                 }
 
-                return new CString { Bytes = buffer.ToArray() };
+                return new IsfString { Bytes = buffer.ToArray() };
             }
 
             public override string ToString()
@@ -891,6 +1143,11 @@ namespace GameRes.Formats.Ikura
             public override string ToString()
             {
                 return $"LABEL_{Index}";
+            }
+
+            public static IsfLabel Parse(string s)
+            {
+                return new IsfLabel { Index = ushort.Parse(s.Substring(6)) };
             }
         }
 
@@ -914,6 +1171,30 @@ namespace GameRes.Formats.Ikura
                         return $"&{value:X4}";
                 }
             }
+
+            public static IsfValue Parse(string s)
+            {
+                int value;
+                uint type;
+                switch (s[0])
+                {
+                    case 'R':
+                        value = int.Parse(s.Substring(5, s.Length - 6));
+                        type = 1;
+                        break;
+                    case '&':
+                        value = int.Parse(s.Substring(1), NumberStyles.HexNumber);
+                        type = 2;
+                        break;
+                    default:
+                        value = int.Parse(s);
+                        type = 0;
+                        break;
+                }
+
+                var id = (type << 30) | (uint)value >> 31 << 29 | (uint)value << 3 >> 3;
+                return new IsfValue { Id = id };
+            }
         }
 
         internal struct IsfTable : IIsfData
@@ -932,6 +1213,22 @@ namespace GameRes.Formats.Ikura
                 builder.Append(string.Join(", ", Labels.Select(i => new IsfLabel { Index = i })));
                 builder.Append("]");
                 return builder.ToString();
+            }
+
+            public static IsfTable Parse(string s)
+            {
+                var part = s.Split('[', ']');
+                var value = IsfValue.Parse(part[0].Trim(' ', ','));
+                var labels = part[1].Split(',')
+                    .Where(text => !string.IsNullOrEmpty(text))
+                    .Select(text => IsfLabel.Parse(text.Trim())).ToArray();
+                var ids = new ushort[labels.Length];
+                for (var i = 0; i < labels.Length; i++)
+                {
+                    ids[i] = labels[i].Index;
+                }
+                
+                return new IsfTable { Value = value.Id, Labels = ids };
             }
         }
 
@@ -999,6 +1296,40 @@ namespace GameRes.Formats.Ikura
                             return "FALSE";
                     }
                 }
+
+                public static Term Parse(string s)
+                {
+                    var match = Regex.Match(s, @"\s*(\S+)\s*(\S+)\s*(\S+)\s*");
+                    var l = IsfValue.Parse(match.Groups[1].Value);
+                    var r = IsfValue.Parse(match.Groups[3].Value);
+                    byte c;
+                    switch (match.Groups[2].Value)
+                    {
+                        case "==":
+                            c = 0x00;
+                            break;
+                        case "<":
+                            c = 0x01;
+                            break;
+                        case "<=":
+                            c = 0x02;
+                            break;
+                        case ">":
+                            c = 0x03;
+                            break;
+                        case ">=":
+                            c = 0x04;
+                            break;
+                        case "!=":
+                            c = 0x05;
+                            break;
+                        default:
+                            c = 0xFF;
+                            break;
+                    }
+                    
+                    return new Term { L = l.Id, C = c, R = r.Id };
+                }
             }
 
             public Term[] Terms;
@@ -1036,24 +1367,23 @@ namespace GameRes.Formats.Ikura
                     builder.Append(" ");
                     switch (term.Key)
                     {
-                        case 0:
+                        case 0x00:
                             builder.Append("+");
                             break;
-                        case 1:
+                        case 0x01:
                             builder.Append("-");
                             break;
-                        case 2:
+                        case 0x02:
                             builder.Append("*");
                             break;
-                        case 3:
+                        case 0x03:
                             builder.Append("/");
                             break;
-                        case 4:
+                        case 0x04:
                             builder.Append("%");
                             break;
                         default:
-                            builder.Append($"?{term.Key}?");
-                            break;
+                            throw new FormatException($"0x{term.Key:X2}");
                     }
 
                     builder.Append(" ");
@@ -1061,6 +1391,44 @@ namespace GameRes.Formats.Ikura
                 }
 
                 return builder.ToString();
+            }
+
+            public static IsfAssignment Parse(string s)
+            {
+                var variable = ushort.Parse(s.Substring(1, 4), NumberStyles.HexNumber);
+                var terms = new List<KeyValuePair<byte, uint>>();
+                var match = Regex.Match(s, @"\s+([^=])\s+(\S+)");
+                while (match.Success)
+                {
+                    byte op;
+                    switch (match.Groups[1].Value)
+                    {
+                        case "+":
+                            op = 0x00;
+                            break;
+                        case "-":
+                            op = 0x01;
+                            break;
+                        case "*":
+                            op = 0x02;
+                            break;
+                        case "/":
+                            op = 0x03;
+                            break;
+                        case "%":
+                            op = 0x04;
+                            break;
+                        default:
+                            op = 0xFF;
+                            break;
+                    }
+                    var value = IsfValue.Parse(match.Groups[2].Value);
+                    terms.Add(new KeyValuePair<byte, uint>(op, value.Id));
+
+                    match = match.NextMatch();
+                }
+
+                return new IsfAssignment { Variable = variable, Terms = terms.ToArray() };
             }
         }
 
@@ -1389,8 +1757,8 @@ namespace GameRes.Formats.Ikura
             public override string ToString()
             {
                 var builder = new StringBuilder();
-                builder.AppendLine($"; version: {Version:X4} ");
-                builder.AppendLine($"; encoding: {Encoding.WebName} ");
+                builder.AppendLine($"; version: {Version:X4}");
+                builder.AppendLine($"; encoding: {Encoding.WebName}");
 
                 for (var i = 0; i < Actions.Length; i++)
                 {
@@ -1470,14 +1838,22 @@ namespace GameRes.Formats.Ikura
                             builder.Append("    MPM ");
                             if ((byte)Actions[i].Args[1] == 0)
                             {
+                                if (args.MoveNext())
+                                {
+                                    builder.Append(" ");
+                                    builder.Append(args.Current);
+                                }
+
                                 while (args.MoveNext())
                                 {
                                     builder.Append(", ");
                                     builder.Append(args.Current);
                                 }
+
                                 builder.AppendLine();
                                 break;
                             }
+
                             builder.AppendLine($"0x{Actions[i].Args[0]:X2}, 0x{Actions[i].Args[1]:X2}");
 
                             foreach (var action in ((IsfMessage)Actions[i].Args[2]).Actions)
@@ -1515,11 +1891,6 @@ namespace GameRes.Formats.Ikura
                 }
 
                 return builder.ToString();
-            }
-
-            public byte[] ToBytes()
-            {
-                return Encoding.GetBytes(ToString());
             }
         }
     }

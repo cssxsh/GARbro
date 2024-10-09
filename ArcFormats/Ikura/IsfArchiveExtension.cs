@@ -1075,8 +1075,8 @@ namespace GameRes.Formats.Ikura
                         case 0x00:
                             buffer.Add(0x00);
                             break;
-                        case 0x82:
-                            if (s.Bytes[i + 1] == IsfKana[0x5D])
+                        case 0x83:
+                            if (s.Bytes[i + 1] == IsfKana[0xB9])
                             {
                                 buffer.Add(0x5C);
                                 buffer.Add(0x00);
@@ -1098,6 +1098,8 @@ namespace GameRes.Formats.Ikura
                             }
                             
                             buffer.Add(s.Bytes[i]);
+                            buffer.Add(s.Bytes[i + 1]);
+                            i++;
                             break;
                         default:
                             if (s.Bytes[i] <= 0x7F)
@@ -1106,8 +1108,7 @@ namespace GameRes.Formats.Ikura
                                 buffer.Add(s.Bytes[i]);
                                 break;
                             }
-                            var index = 3;
-                            for (j = 2; index < IsfKana.Length; index += 2)
+                            for (j = 2; j < IsfKana.Length; j += 2)
                             {
                                 if (s.Bytes[i] == IsfKana[j] && s.Bytes[i + 1] == IsfKana[j + 1]) break;
                             }

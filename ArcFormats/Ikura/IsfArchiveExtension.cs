@@ -27,6 +27,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -36,14 +37,161 @@ namespace GameRes.Formats.Ikura
 {
     public static class IsfArchiveExtension
     {
-        internal static IsfAssembler Decompile(this byte[] data)
+        internal static IsfAssembler Decompile(this byte[] data) => data.ToAssembler();
+
+        internal static IsfAssembler Compile(this string code) => code.ToAssembler();
+
+        internal static void Write(this BinaryWriter output, IsfAssembler assembler)
         {
-            return data.ToAssembler();
+            var position = output.BaseStream.Position;
+            var offset = (uint)(8 + assembler.Labels.Length * 4);
+            output.Write(offset);
+            output.Write(assembler.Version);
+            output.Write(assembler.Key);
+            switch (assembler.Encoding.CodePage)
+            {
+                case 932: // Shift_JIS
+                    output.Write((byte)0x80);
+                    break;
+                case 936: // GBK
+                    output.Write((byte)0x86);
+                    break;
+                default:
+                    output.Write((byte)0x00);
+                    break;
+            }
+
+            for (var i = 0; i < assembler.Actions.Length; i++)
+            {
+                for (var j = 0; j < assembler.Labels.Length; j++)
+                {
+                    if (assembler.Labels[j] != i) continue;
+                    output.BaseStream.Position = position + 8 + j * 4;
+                    output.Write(offset);
+                }
+
+                output.BaseStream.Position = position + offset;
+                output.Write((byte)assembler.Actions[i].Instruction);
+                var size = (uint)assembler.Actions[i].Args.Sum(arg => arg.SizeForIsf());
+                if (2 + size > 0x7F)
+                {
+                    output.Write((ushort)((3 + size) | 0x8000));
+                    offset += 3 + size;
+                }
+                else
+                {
+                    output.Write((byte)(2 + size));
+                    offset += 2 + size;
+                }
+
+                output.Write(assembler.Actions[i].Args);
+                if (output.BaseStream.Position != position + offset)
+                {
+                    throw new FormatException(
+                        $"{i} {assembler.Actions[i].Instruction} {output.BaseStream.Position - position} != {offset}");
+                }
+            }
+
+            Func<byte, byte> convert;
+            switch (assembler.Version)
+            {
+                case 0x9795:
+                    convert = b => (byte)(b << 2 | b >> 6);
+                    break;
+                case 0xD197:
+                    convert = b => (byte)~b;
+                    break;
+                case 0xCE89:
+                    convert = b => (byte)(b ^ assembler.Key);
+                    break;
+                default:
+                    return;
+            }
+
+            var buffer = new byte[output.BaseStream.Position - position - 8];
+            output.BaseStream.Position = position + 8;
+            output.BaseStream.Read(buffer, 0, buffer.Length);
+            for (var i = 0; i < buffer.Length; i++) buffer[i] = convert.Invoke(buffer[i]);
+            output.BaseStream.Position = position + 8;
+            output.BaseStream.Write(buffer, 0, buffer.Length);
         }
 
-        internal static IsfAssembler Compile(this string code)
+        private static void Write(this BinaryWriter output, object[] args)
         {
-            return code.ToAssembler();
+            foreach (var arg in args)
+            {
+                switch (arg)
+                {
+                    case byte uint8:
+                        output.Write(uint8);
+                        break;
+                    case ushort uint16:
+                        output.Write(uint16);
+                        break;
+                    case uint uint32:
+                        output.Write(uint32);
+                        break;
+                    case UInt24 uint24:
+                        output.Write(uint24.Bytes);
+                        break;
+                    case CString str:
+                        output.Write(str.Bytes);
+                        break;
+                    case IsfString str:
+                        output.Write(str.Bytes);
+                        break;
+                    case IsfLabel label:
+                        output.Write(label.Index);
+                        break;
+                    case IsfValue value:
+                        output.Write(value.Id);
+                        break;
+                    case IsfTable table:
+                        output.Write(table.Value);
+                        output.Write((byte)table.Labels.Length);
+                        foreach (var label in table.Labels)
+                        {
+                            output.Write(label);
+                        }
+
+                        break;
+                    case IsfMessage message:
+                        foreach (var action in message.Actions)
+                        {
+                            output.Write(action.Key);
+                            output.Write(action.Value);
+                        }
+
+                        break;
+                    case IsfCondition condition:
+                        var and = false;
+                        foreach (var term in condition.Terms)
+                        {
+                            if (and) output.Write((byte)0xFE);
+                            output.Write(term.L);
+                            output.Write(term.C);
+                            output.Write(term.R);
+                            and = true;
+                        }
+
+                        output.Write(condition.Action.Key);
+                        output.Write(condition.Action.Value);
+                        output.Write((byte)0xFF);
+                        break;
+                    case IsfAssignment assignment:
+                        output.Write(assignment.Variable);
+                        foreach (var term in assignment.Terms)
+                        {
+                            output.Write(term.Key);
+                            output.Write(term.Value);
+                        }
+
+                        output.Write((byte)0x05);
+                        break;
+                    default:
+                        throw new NotSupportedException($"{arg.GetType()} is unsupported.");
+                }
+            }
         }
 
         private static string ToText(this object arg, Encoding encoding)
@@ -98,6 +246,45 @@ namespace GameRes.Formats.Ikura
         {
             var offset = data.ToInt32(0);
             var version = data.ToUInt16(4);
+            var key = data.ToUInt8(6);
+            var charset = data.ToUInt8(7);
+            var encoding = Encoding.GetEncoding("Shift-JIS");
+
+            switch (charset)
+            {
+                case 0x80:
+                    encoding = Encoding.GetEncoding("Shift-JIS");
+                    break;
+                case 0x86:
+                    encoding = Encoding.GetEncoding("GBK");
+                    break;
+            }
+
+            switch (version)
+            {
+                case 0x9795:
+                    for (var i = 8; i < data.Length; i++)
+                    {
+                        data[i] = (byte)(data[i] >> 2 | data[i] << 6);
+                    }
+
+                    break;
+                case 0xD197:
+                    for (var i = 8; i < data.Length; i++)
+                    {
+                        data[i] = (byte)~data[i];
+                    }
+
+                    break;
+                case 0xCE89:
+                    for (var i = 8; i < data.Length; i++)
+                    {
+                        data[i] = (byte)(data[i] ^ key);
+                    }
+
+                    break;
+            }
+
             var table = Enumerable.Range(0, (offset - 8) / 4)
                 .Select(i => data.ToInt32(8 + i * 4))
                 .ToArray();
@@ -129,8 +316,9 @@ namespace GameRes.Formats.Ikura
             return new IsfAssembler
             {
                 Version = version,
+                Key = key,
                 Actions = actions.ToArray(),
-                Encoding = Encoding.GetEncoding("Shift-JIS"),
+                Encoding = encoding,
                 Labels = labels
             };
         }
@@ -140,11 +328,17 @@ namespace GameRes.Formats.Ikura
             var lines = code.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var version = ushort.Parse(
                 (lines.FirstOrDefault(line => line.StartsWith("; version: ")) ?? "9597")
-                    .Replace("; version: ", "").Trim()
+                .Replace("; version: ", "").Trim()
+                , NumberStyles.HexNumber
+            );
+            var key = byte.Parse(
+                (lines.FirstOrDefault(line => line.StartsWith("; key: ")) ?? "00")
+                .Replace("; key: ", "").Trim()
+                , NumberStyles.HexNumber
             );
             var encoding = Encoding.GetEncoding(
                 (lines.FirstOrDefault(line => line.StartsWith("; encoding: ")) ?? "Shift-JIS")
-                    .Replace("; encoding: ", "").Trim()
+                .Replace("; encoding: ", "").Trim()
             );
 
             var actions = new List<IsfAction>();
@@ -152,14 +346,13 @@ namespace GameRes.Formats.Ikura
 
             for (var i = 0; i < lines.Length; i++)
             {
+                if (lines[i].StartsWith(";")) continue;
                 if (lines[i].StartsWith("#LABEL_"))
                 {
                     var index = int.Parse(Regex.Match(lines[i], @"#LABEL_([0-9]+)").Groups[1].Value);
                     table.Add(new KeyValuePair<int, int>(index, actions.Count));
                     continue;
                 }
-
-                if (!lines[i].StartsWith("    ")) continue;
 
                 var name = Regex.Match(lines[i], @"    (\w+)").Groups[1].Value;
                 if (!Enum.TryParse(name, out IsfInstruction instruction)) throw new FormatException(lines[i]);
@@ -175,22 +368,12 @@ namespace GameRes.Formats.Ikura
                     case IsfInstruction.PM:
                     case IsfInstruction.PMP:
                     {
-                        args.AddRange(lines[i]
-                            .Substring(4 + instruction.ToString().Length)
-                            .Split(',')
-                            .Where(s => !string.IsNullOrEmpty(s))
-                            .Select(s => s.Trim().ToArg(encoding))
-                        );
+                        args.AddRange(lines[i].Substring(4 + instruction.ToString().Length).ToArgs(encoding));
                         var messages = new List<KeyValuePair<byte, object[]>>();
                         while (!lines[++i].StartsWith("    END"))
                         {
                             if (lines[i].StartsWith(";")) continue;
-                            var parts = lines[i]
-                                .Substring(8)
-                                .Split(',')
-                                .Where(s => !string.IsNullOrEmpty(s))
-                                .Select(s => s.Trim().ToArg(encoding))
-                                .ToArray();
+                            var parts = lines[i].Substring(8).ToArgs(encoding);
                             var type = (byte)parts[0];
                             var data = parts.Slice(1, parts.Length);
                             var message = new KeyValuePair<byte, object[]>(type, data);
@@ -210,32 +393,25 @@ namespace GameRes.Formats.Ikura
                         while (!lines[++i].StartsWith("    END"))
                         {
                             if (lines[i].StartsWith(";")) continue;
-                            if (lines[i].StartsWith("        AND"))
+                            switch (lines[i].Substring(8, 2))
                             {
-                                terms.Add(IsfCondition.Term.Parse(lines[i].Substring(12)));
-                                continue;
-                            }
-
-                            if (lines[i].StartsWith("        JP"))
-                            {
-                                op = new KeyValuePair<byte, object[]>(0x00, lines[i]
-                                    .Substring(10)
-                                    .Split(',')
-                                    .Where(s => !string.IsNullOrEmpty(s))
-                                    .Select(s => s.Trim().ToArg(encoding))
-                                    .ToArray());
-                                continue;
-                            }
-
-                            if (lines[i].StartsWith("        HS"))
-                            {
-                                op = new KeyValuePair<byte, object[]>(0x01, lines[i]
-                                    .Substring(10)
-                                    .Split(',')
-                                    .Where(s => !string.IsNullOrEmpty(s))
-                                    .Select(s => s.Trim().ToArg(encoding))
-                                    .ToArray());
-                                continue;
+                                case "AN": // AND
+                                    terms.Add(IsfCondition.Term.Parse(lines[i].Substring(12)));
+                                    break;
+                                case "JP":
+                                    op = new KeyValuePair<byte, object[]>(
+                                        0x00,
+                                        lines[i].Substring(10).ToArgs(encoding)
+                                    );
+                                    break;
+                                case "HS":
+                                    op = new KeyValuePair<byte, object[]>(
+                                        0x01,
+                                        lines[i].Substring(10).ToArgs(encoding)
+                                    );
+                                    break;
+                                default:
+                                    throw new FormatException(lines[i]);
                             }
                         }
 
@@ -244,23 +420,13 @@ namespace GameRes.Formats.Ikura
                         break;
                     case IsfInstruction.MPM:
                     {
-                        args.AddRange(lines[i]
-                            .Substring(4 + instruction.ToString().Length)
-                            .Split(',')
-                            .Where(s => !string.IsNullOrEmpty(s))
-                            .Select(s => s.Trim().ToArg(encoding))
-                        );
+                        args.AddRange(lines[i].Substring(4 + instruction.ToString().Length).ToArgs(encoding));
                         if ((byte)args[1] == 0x00) break;
                         var messages = new List<KeyValuePair<byte, object[]>>();
                         while (!lines[++i].StartsWith("    END"))
                         {
                             if (lines[i].StartsWith(";")) continue;
-                            var parts = lines[i]
-                                .Substring(8)
-                                .Split(',')
-                                .Where(s => !string.IsNullOrEmpty(s))
-                                .Select(s => s.Trim().ToArg(encoding))
-                                .ToArray();
+                            var parts = lines[i].Substring(8).ToArgs(encoding);
                             var type = (byte)parts[0];
                             var data = parts.Slice(1, parts.Length);
                             var message = new KeyValuePair<byte, object[]>(type, data);
@@ -271,12 +437,7 @@ namespace GameRes.Formats.Ikura
                     }
                         break;
                     default:
-                        args.AddRange(lines[i]
-                            .Substring(4 + instruction.ToString().Length)
-                            .Split(',')
-                            .Where(s => !string.IsNullOrEmpty(s))
-                            .Select(s => s.Trim().ToArg(encoding))
-                        );
+                        args.AddRange(lines[i].Substring(4 + instruction.ToString().Length).ToArgs(encoding));
                         break;
                 }
 
@@ -297,6 +458,7 @@ namespace GameRes.Formats.Ikura
             var assembler = new IsfAssembler
             {
                 Version = version,
+                Key = key,
                 Actions = actions.ToArray(),
                 Encoding = encoding,
                 Labels = labels
@@ -679,29 +841,7 @@ namespace GameRes.Formats.Ikura
                 if (pos >= data.Length) throw new NotSupportedException("offset exceeds length");
                 var arg = reader.Invoke(data, pos);
                 args.Add(arg);
-                switch (arg)
-                {
-                    case int _:
-                        pos += 4;
-                        break;
-                    case byte _:
-                        pos += 1;
-                        break;
-                    case ushort _:
-                        pos += 2;
-                        break;
-                    case uint _:
-                        pos += 4;
-                        break;
-                    case IIsfData block:
-                        pos += block.Size;
-                        break;
-                    case IsfLabel[] labels:
-                        pos += 1 + labels.Length * 2;
-                        break;
-                    default:
-                        throw new NotSupportedException($"{arg.GetType()} size is unknown.");
-                }
+                pos += arg.SizeForIsf();
             }
 
             if (pos != data.Length)
@@ -710,6 +850,36 @@ namespace GameRes.Formats.Ikura
             }
 
             return args.ToArray();
+        }
+
+        private static object[] ToArgs(this string text, Encoding encoding)
+        {
+            if (text.Trim() == "") return Array.Empty<object>();
+            var parts = text.Split(',');
+            var args = new object[parts.Length];
+            for (var i = 0; i < args.Length; i++)
+            {
+                args[i] = parts[i].Trim().ToArg(encoding);
+            }
+
+            return args;
+        }
+
+        private static int SizeForIsf(this object arg)
+        {
+            switch (arg)
+            {
+                case byte _:
+                    return 1;
+                case ushort _:
+                    return 2;
+                case uint _:
+                    return 4;
+                case IIsfData block:
+                    return block.Size;
+                default:
+                    throw new NotSupportedException($"{arg.GetType()} size is unknown.");
+            }
         }
 
         private static IsfOperation ToOperation(this byte[] data, int index)
@@ -840,7 +1010,6 @@ namespace GameRes.Formats.Ikura
                         pos += 1;
                         break;
                     case 0x02:
-                        break;
                     case 0x03:
                         break;
                     case 0x04:
@@ -848,8 +1017,6 @@ namespace GameRes.Formats.Ikura
                         pos += 1;
                         break;
                     case 0x05:
-                        // StopAction
-                        break;
                     case 0x06:
                         break;
                     case 0x07:
@@ -857,7 +1024,7 @@ namespace GameRes.Formats.Ikura
                         pos += 1;
                         break;
                     case 0x08:
-                        args.Add(bytes.ToUInt8(pos));
+                        args.Add(bytes.ToUInt32(pos));
                         pos += 4;
                         break;
                     case 0x09:
@@ -1083,11 +1250,12 @@ namespace GameRes.Formats.Ikura
                                 i++;
                                 break;
                             }
-                            
+
                             for (j = 3; j < IsfKana.Length; j += 2)
                             {
                                 if (s.Bytes[i + 1] == IsfKana[j]) break;
                             }
+
                             if (j < IsfKana.Length)
                             {
                                 buffer.Add(0x5C);
@@ -1096,7 +1264,7 @@ namespace GameRes.Formats.Ikura
                                 i++;
                                 break;
                             }
-                            
+
                             buffer.Add(s.Bytes[i]);
                             buffer.Add(s.Bytes[i + 1]);
                             i++;
@@ -1108,17 +1276,19 @@ namespace GameRes.Formats.Ikura
                                 buffer.Add(s.Bytes[i]);
                                 break;
                             }
+
                             for (j = 2; j < IsfKana.Length; j += 2)
                             {
                                 if (s.Bytes[i] == IsfKana[j] && s.Bytes[i + 1] == IsfKana[j + 1]) break;
                             }
+
                             if (j < IsfKana.Length)
                             {
                                 buffer.Add((byte)(j / 2));
                                 i++;
                                 break;
                             }
-                            
+
                             buffer.Add(s.Bytes[i]);
                             buffer.Add(s.Bytes[i + 1]);
                             i++;
@@ -1228,7 +1398,7 @@ namespace GameRes.Formats.Ikura
                 {
                     ids[i] = labels[i].Index;
                 }
-                
+
                 return new IsfTable { Value = value.Id, Labels = ids };
             }
         }
@@ -1328,7 +1498,7 @@ namespace GameRes.Formats.Ikura
                             c = 0xFF;
                             break;
                     }
-                    
+
                     return new Term { L = l.Id, C = c, R = r.Id };
                 }
             }
@@ -1423,6 +1593,7 @@ namespace GameRes.Formats.Ikura
                             op = 0xFF;
                             break;
                     }
+
                     var value = IsfValue.Parse(match.Groups[2].Value);
                     terms.Add(new KeyValuePair<byte, uint>(op, value.Id));
 
@@ -1751,6 +1922,7 @@ namespace GameRes.Formats.Ikura
         internal class IsfAssembler
         {
             internal ushort Version;
+            internal byte Key;
             internal Encoding Encoding;
             internal IsfAction[] Actions;
             internal int[] Labels;
@@ -1759,6 +1931,7 @@ namespace GameRes.Formats.Ikura
             {
                 var builder = new StringBuilder();
                 builder.AppendLine($"; version: {Version:X4}");
+                builder.AppendLine($"; key: {Version:X2}");
                 builder.AppendLine($"; encoding: {Encoding.WebName}");
 
                 for (var i = 0; i < Actions.Length; i++)

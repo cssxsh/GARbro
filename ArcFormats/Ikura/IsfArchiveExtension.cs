@@ -1028,7 +1028,7 @@ namespace GameRes.Formats.Ikura
                         pos += 1;
                         break;
                     case 0x08:
-                        args.Add(bytes.ToUInt32(pos));
+                        args.Add(bytes.ToIsfValue(pos));
                         pos += 4;
                         break;
                     case 0x09:

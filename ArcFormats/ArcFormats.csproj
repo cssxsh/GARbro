@@ -111,6 +111,9 @@
     <Compile Include="FC01\ArcBDT.cs" />
     <Compile Include="FC01\BdtTables.cs" />
     <Compile Include="GScripter\ArcDATA.cs" />
+    <Compile Include="Ikura\CreateMpxWidget.xaml.cs">
+      <DependentUpon>CreateMpxWidget.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Ikura\IsfArchiveExtension.cs" />
     <Compile Include="Ism\ImagePNG.cs" />
     <Compile Include="Kogado\ArcARC.cs" />
@@ -1119,6 +1122,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="FC01\WidgetMCG.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Ikura\CreateMpxWidget.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

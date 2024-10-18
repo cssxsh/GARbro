@@ -254,6 +254,15 @@ namespace GameRes.Formats.Strings {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to IKURA archive type.
+        /// </summary>
+        public static string IkuraArchiveType {
+            get {
+                return ResourceManager.GetString("IkuraArchiveType", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Choose game executable file.
         /// </summary>
         public static string INTChooseExe {

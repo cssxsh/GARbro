@@ -401,4 +401,7 @@ Choose encryption scheme or enter a passphrase.</value>
   <data name="ODNAudioSampleRate" xml:space="preserve">
     <value>Default audio sampling rate</value>
   </data>
+  <data name="IkuraArchiveType" xml:space="preserve">
+    <value>IKURA archive type</value>
+  </data>
 </root>

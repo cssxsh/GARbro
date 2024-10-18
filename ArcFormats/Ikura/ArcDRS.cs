@@ -92,9 +92,10 @@ namespace GameRes.Formats.Ikura
         public Dictionary<string, byte[]> KnownSecrets;
     }
 
-    internal class IsfOptions : ResourceOptions
+    internal class IkuraOptions : ResourceOptions
     {
         public byte[] Secret;
+        public string Type;
     }
 
     internal class IsfArchive : ArcFile
@@ -115,7 +116,7 @@ namespace GameRes.Formats.Ikura
         public override string Description { get { return "IKURA GDL resource archive"; } }
         public override uint     Signature { get { return 0x4d324d53; } } // 'SM2M'
         public override bool  IsHierarchic { get { return false; } }
-        public override bool      CanWrite { get { return false; } }
+        public override bool      CanWrite { get { return true; } }
 
         public MpxOpener ()
         {
@@ -168,10 +169,7 @@ namespace GameRes.Formats.Ikura
         public override void Create(Stream output, IEnumerable<Entry> list, ResourceOptions options = null, EntryCallback callback = null)
         {
             var files = list.Where (e => e.Type != "directory").ToArray();
-            // var extensions = files.Select(file => Path.GetExtension(file.Name).ToUpperInvariant())
-            //     .Distinct()
-            //     .ToArray();
-            var type = "ISF";
+            var type = GetOptions<IkuraOptions> (options).Type;
             
             Array.Sort(files, (a, b) => string.Compare(
                 Path.GetFileName(a.Name), 
@@ -199,13 +197,27 @@ namespace GameRes.Formats.Ikura
             for (var i = 0; i < files.Length; i++)
             {
                 var entry = files[i];
-                var code = File.ReadAllText(entry.Name, Encoding.UTF8);
-                var assembler = code.Compile();
                 
                 output.Position = offset;
-                using (var content = new BinaryWriter(output, Encoding.ASCII, true))
+                switch (type)
                 {
-                    content.Write(assembler);
+                    case "ISF":
+                        var code = File.ReadAllText(entry.Name, Encoding.UTF8);
+                        var assembler = code.Compile();
+                
+                        using (var content = new BinaryWriter(output, Encoding.ASCII, true))
+                        {
+                            content.Write(assembler);
+                        }
+                        break;
+                    default:
+                        var bytes = File.ReadAllBytes(entry.Name);
+                        
+                        using (var content = new BinaryWriter(output, Encoding.ASCII, true))
+                        {
+                            content.Write(bytes);
+                        }
+                        break;
                 }
 
                 var size = (uint)(output.Position - offset);
@@ -230,6 +242,11 @@ namespace GameRes.Formats.Ikura
             var empty = new byte[0x10 - (byte)(output.Length & 0x0F)];
             output.Seek(0, SeekOrigin.End);
             output.Write(empty, 0, empty.Length);
+        }
+
+        public override object GetCreationWidget()
+        {
+            return new GUI.CreateMpxWidget();
         }
 
         public override Stream OpenEntry (ArcFile arc, Entry entry)
@@ -273,8 +290,9 @@ namespace GameRes.Formats.Ikura
 
         public override ResourceOptions GetDefaultOptions ()
         {
-            return new IsfOptions {
-                Secret = GetSecret (Properties.Settings.Default.ISFScheme) ?? new byte[0]
+            return new IkuraOptions {
+                Secret = GetSecret (Properties.Settings.Default.ISFScheme) ?? Array.Empty<byte>(),
+                Type = Properties.Settings.Default.IkuraArchiveType
             };
         }
 
@@ -285,7 +303,7 @@ namespace GameRes.Formats.Ikura
 
         private byte[] QuerySecret ()
         {
-            var options = Query<IsfOptions> (arcStrings.ArcEncryptedNotice);
+            var options = Query<IkuraOptions> (arcStrings.ArcEncryptedNotice);
             return options.Secret;
         }
 

@@ -384,6 +384,18 @@ namespace GameRes.Formats.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("DATA")]
+        public string IkuraArchiveType {
+            get {
+                return ((string)(this["IkuraArchiveType"]));
+            }
+            set {
+                this["IkuraArchiveType"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("0")]
         public byte MCGLastKey {
             get {

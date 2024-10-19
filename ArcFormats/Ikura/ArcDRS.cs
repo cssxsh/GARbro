@@ -189,7 +189,16 @@ namespace GameRes.Formats.Ikura
                 header.Write(offset - 0x04);
 
                 Array.Clear(buffer, 0, buffer.Length);
-                Encoding.ASCII.GetBytes(type).CopyTo(buffer, 0);
+                switch (type)
+                {
+                    case "DATA":
+                    case "WMSC":
+                        Encoding.ASCII.GetBytes(type.ToLowerInvariant()).CopyTo(buffer, 0);
+                        break;
+                    default:
+                        Encoding.ASCII.GetBytes(type).CopyTo(buffer, 0);
+                        break;
+                }
                 header.Write(buffer);
                 header.Write(0x0000_0020);
             }

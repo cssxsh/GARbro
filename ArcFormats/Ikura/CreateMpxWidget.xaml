@@ -18,6 +18,9 @@
               Margin="8"
               SelectedValue="{Binding Source={x:Static p:Settings.Default},Path=IkuraArchiveType, Mode=TwoWay}">
         <ComboBoxItem Content="DATA" />
+        <ComboBoxItem Content="GGD" />
         <ComboBoxItem Content="ISF" />
+        <ComboBoxItem Content="SE" />
+        <ComboBoxItem Content="WMSC" />
     </ComboBox>
 </Grid>

@@ -142,17 +142,21 @@ namespace GameRes.Formats.Ikura
                 var name = file.View.ReadString (dir_offset, 12);
                 if (string.IsNullOrEmpty (name))
                     return null;
-                name = name.ToLowerInvariant();
                 Entry entry;
-                if (name.EndsWith (".isf") || name.EndsWith (".snr"))
+                switch (Path.GetExtension(name).ToUpperInvariant())
                 {
-                    entry = new Entry { Name = name, Type = "script" };
-                    has_scripts = true;
+                    case "ISF":
+                    case "SNR":
+                        entry = new Entry { Name = name, Type = "script" };
+                        has_scripts = true;
+                        break;
+                    case "BIN":
+                        entry = new ImageEntry { Name = name };
+                        break;
+                    default:
+                        entry = FormatCatalog.Instance.Create<Entry> (name);
+                        break;
                 }
-                else if (name.EndsWith (".bin"))
-                    entry = new ImageEntry { Name = name };
-                else
-                    entry = FormatCatalog.Instance.Create<Entry> (name);
                 entry.Offset = file.View.ReadUInt32 (dir_offset+12);
                 entry.Size   = file.View.ReadUInt32 (dir_offset+16);
                 if (!entry.CheckPlacement (file.MaxOffset))
@@ -234,7 +238,7 @@ namespace GameRes.Formats.Ikura
                 output.Position = 0x0000_0020 + i * 0x14;
                 using (var index = new BinaryWriter(output, Encoding.ASCII, true))
                 {
-                    var filename = Path.GetFileName(entry.Name).ToUpperInvariant();
+                    var filename = Path.GetFileName(entry.Name);
                     Array.Clear(buffer, 0, buffer.Length);
                     Encoding.ASCII.GetBytes(filename).CopyTo(buffer, 0);
                     index.Write(buffer);
